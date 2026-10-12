@@ -2,7 +2,8 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { analyzePgn, formatEval, lineFens, numberedLine, type GameAnalysis, type MoveAnalysis, type Classification, type LineInfo } from "@/lib/analysis";
-import { BrowserEngine } from "@/lib/browserEngine";
+import { runUserAnalysis } from "@/lib/engineManager";
+import { getCachedAnalysis, saveAnalysis } from "@/lib/analysisCache";
 import { CLASS_STYLE, FLAGGED } from "@/lib/classification";
 import { CLASSIFICATIONS } from "@/lib/classify";
 import { loadOpeningBook } from "@/lib/openingBook";
@@ -19,12 +20,21 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 });
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const CACHE_VERSION = "v3";
-const cacheKey = (g: GameSummary, depth: number, multiPv: number) => `movementor:${CACHE_VERSION}:${g.id}:d${depth}:pv${multiPv}`;
+export type Status = { kind: "idle" } | { kind: "loading-engine" } | { kind: "analyzing"; done: number; total: number } | { kind: "done"; seconds: number | null } | { kind: "error"; message: string };
 
-type Status = { kind: "idle" } | { kind: "loading-engine" } | { kind: "analyzing"; done: number; total: number } | { kind: "done"; seconds: number | null } | { kind: "error"; message: string };
-
-export function Review({ game, depth, multiPv = 2 }: { game: GameSummary; depth: number; multiPv?: number }) {
+export function Review({
+  game,
+  depth,
+  multiPv = 2,
+  onStatus,
+  explorerLayout = "auto",
+}: {
+  game: GameSummary;
+  depth: number;
+  multiPv?: number;
+  onStatus?: (s: Status) => void;
+  explorerLayout?: "auto" | "sheet";
+}) {
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [ply, setPly] = useState(0);
@@ -34,54 +44,42 @@ export function Review({ game, depth, multiPv = 2 }: { game: GameSummary; depth:
   const [preview, setPreview] = useState<ExplorerState | null>(null);
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
-  const engineRef = useRef<BrowserEngine | null>(null);
   const flipped = game.userColor === "black";
 
-  // Run analysis whenever the game or depth changes (cached in localStorage).
+  useEffect(() => onStatus?.(status), [status, onStatus]);
+
+  // Run analysis whenever the game or settings change (cached in localStorage). Uses the shared
+  // engine; opening a game pre-empts any background preloading.
   useEffect(() => {
     const signal = { aborted: false };
     setAnalysis(null);
     setPly(0);
     setMode("overview");
-    const cached = typeof window !== "undefined" ? localStorage.getItem(cacheKey(game, depth, multiPv)) : null;
+    const cached = getCachedAnalysis(game.id, depth, multiPv);
     if (cached) {
-      try {
-        setAnalysis(JSON.parse(cached));
-        setStatus({ kind: "done", seconds: null });
-        return;
-      } catch {
-        /* fall through to fresh analysis */
-      }
+      setAnalysis(cached);
+      setStatus({ kind: "done", seconds: null });
+      return;
     }
+    setStatus({ kind: "loading-engine" });
     (async () => {
       try {
-        if (!engineRef.current) {
-          setStatus({ kind: "loading-engine" });
-          const eng = new BrowserEngine();
-          await eng.init();
-          engineRef.current = eng;
-          setEngineName(eng.name);
-        }
-        const eng = engineRef.current;
-        await eng.setMultiPv(multiPv);
-        await eng.newGame();
         const book = await loadOpeningBook().catch(() => null);
         const t0 = performance.now();
-        const result = await analyzePgn(game.pgn, eng.evaluate, {
-          depth,
-          multiPv,
-          book,
-          signal,
-          onProgress: (done, total) => !signal.aborted && setStatus({ kind: "analyzing", done, total }),
+        const result = await runUserAnalysis(multiPv, (eng) => {
+          if (!signal.aborted) setEngineName(eng.name);
+          return analyzePgn(game.pgn, eng.evaluate, {
+            depth,
+            multiPv,
+            book,
+            signal,
+            onProgress: (done, total) => !signal.aborted && setStatus({ kind: "analyzing", done, total }),
+          });
         });
+        saveAnalysis(game.id, depth, multiPv, result);
         if (signal.aborted) return;
         setAnalysis(result);
         setStatus({ kind: "done", seconds: (performance.now() - t0) / 1000 });
-        try {
-          localStorage.setItem(cacheKey(game, depth, multiPv), JSON.stringify(result));
-        } catch {
-          /* storage full; ignore */
-        }
       } catch (e) {
         if (!signal.aborted) setStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) });
       }
@@ -90,8 +88,6 @@ export function Review({ game, depth, multiPv = 2 }: { game: GameSummary; depth:
       signal.aborted = true;
     };
   }, [game, depth, multiPv]);
-
-  useEffect(() => () => engineRef.current?.terminate(), []);
 
   const maxPly = analysis?.moves.length ?? 0;
   const go = useCallback(
@@ -213,6 +209,7 @@ export function Review({ game, depth, multiPv = 2 }: { game: GameSummary; depth:
       {preview && (
         <LineExplorer
           key={preview.id}
+          layout={explorerLayout}
           state={preview}
           fens={previewFens}
           flipped={flipped}

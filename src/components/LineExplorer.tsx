@@ -28,7 +28,9 @@ export function LineExplorer({
   playedFen,
   onStep,
   onClose,
+  layout = "auto",
 }: {
+  layout?: "auto" | "sheet";
   state: ExplorerState;
   fens: { fen: string; from: string; to: string }[];
   flipped: boolean;
@@ -44,6 +46,7 @@ export function LineExplorer({
     return () => cancelAnimationFrame(id);
   }, []);
   const shown = entered && !closing;
+  const side = layout === "auto"; // "auto": side card on lg+, sheet below; "sheet": always a sheet
 
   const { line, step } = state;
   const pos = step > 0 ? fens[step - 1] : null;
@@ -98,7 +101,7 @@ export function LineExplorer({
     <>
       {/* Backdrop for the bottom-sheet layout (narrow screens only) */}
       <div
-        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 motion-reduce:transition-none lg:hidden ${shown ? "opacity-100" : "opacity-0"}`}
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 motion-reduce:transition-none ${side ? "lg:hidden" : ""} ${shown ? "opacity-100" : "opacity-0"}`}
         onClick={onClose}
         aria-hidden
       />
@@ -111,13 +114,13 @@ export function LineExplorer({
           // sheet (default / mobile)
           "fixed inset-x-0 bottom-0 z-50 max-h-[92vh] overflow-y-auto rounded-t-2xl",
           // side card (desktop): slides out to the left of the real board, over the game list column
-          "lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-full lg:top-0 lg:mr-4 lg:max-h-none lg:w-[320px] lg:overflow-visible lg:rounded-xl",
+          side ? "lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-full lg:top-0 lg:mr-4 lg:max-h-none lg:w-[320px] lg:overflow-visible lg:rounded-xl" : "mx-auto max-w-xl",
           "border border-indigo-400/60 bg-gradient-to-b from-slate-800 to-slate-900 p-3 shadow-2xl shadow-indigo-950/60 ring-1 ring-indigo-500/20",
           "transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none",
-          shown ? "translate-y-0 opacity-100 lg:translate-x-0" : "translate-y-full opacity-0 lg:translate-x-10 lg:translate-y-0",
+          shown ? "translate-y-0 opacity-100 lg:translate-x-0" : side ? "translate-y-full opacity-0 lg:translate-x-10 lg:translate-y-0" : "translate-y-full opacity-0",
         ].join(" ")}
       >
-        <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-600 lg:hidden" />
+        <div className={`mx-auto mb-2 h-1 w-10 rounded-full bg-slate-600 ${side ? "lg:hidden" : ""}`} />
         <header className="mb-2 flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300">Hypothetical line</div>
@@ -139,7 +142,7 @@ export function LineExplorer({
             <Chessboard options={boardOptions} />
           </div>
           {/* Mini "played game" board: only in the sheet layout, where the real board is covered */}
-          <div className="w-24 shrink-0 lg:hidden" data-testid="explorer-played-mini">
+          <div className={`w-24 shrink-0 ${side ? "lg:hidden" : ""}`} data-testid="explorer-played-mini">
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Played game</div>
             <div className="pointer-events-none overflow-hidden rounded opacity-80 grayscale-[30%]">
               <Chessboard options={miniOptions} />

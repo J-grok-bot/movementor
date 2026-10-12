@@ -14,10 +14,25 @@ server-side engine cost.
 ![line explorer overlay](docs/screenshot-overlay.png)
 ![line explorer on mobile](docs/screenshot-overlay-mobile.png)
 
+<p>
+  <img alt="mobile game list" src="docs/screenshot-mobile-list.png" width="300">
+  <img alt="mobile review" src="docs/screenshot-mobile-review.png" width="300">
+</p>
+
 ## Features
 
 - Pulls recent games from the public Chess.com Published-Data API (no login, no premium).
-- Game list: opponent, ratings, result, time control, date, opening.
+- Game list: compact one-line cards (result chip, your color, opponent + rating, time control, date) with a
+  **Reviewed** badge for games whose analysis is already cached.
+- **Mobile-first navigation:** on narrow screens (< 1024px) the list and the review are separate views. Tapping a game
+  opens a full-screen review at `/game/<id>` with a sticky header (back button, result, opponent, analysis progress);
+  back returns to the list at the same scroll position. Desktop keeps the side-by-side layout (`/?user=…&g=<id>`
+  deep links; `/game/<id>` redirects there on wide screens).
+- **Background preloading:** after the list loads, the newest 3 un-reviewed games are analyzed one at a time in the
+  same worker while the tab is visible and idle, with subtle % progress on the list item. On touch devices it only
+  runs while `navigator.getBattery()` reports charging (no Battery API means no preloading on mobile). Opening a game
+  pauses preloading so your game gets the engine first; it resumes afterwards. Turn it off under ⚙ Settings
+  ("Preload newest games"); settings persist in `localStorage`. Chess.com requests stay sequential.
 - Move-by-move Stockfish 19 (lite, single-threaded WASM) analysis at a configurable depth
   (default 14; `?depth=` URL param or the dropdown).
 - **Game overview first**: accuracy per player, an *estimated* game rating (labelled as a rough estimate),
@@ -41,13 +56,13 @@ server-side engine cost.
   the real board, over the game list. On narrow screens it's a bottom sheet with a mini "Played game" board. The real
   board stays at the played position, dimmed and labelled "Played game, frozen". ← → / Home / End / Esc drive the
   overlay while it's open. Open/close is animated and respects `prefers-reduced-motion`.
-- Results are cached in `localStorage` per game + depth + MultiPV.
+- Results are cached in `localStorage` per game + depth + MultiPV (LRU eviction when storage is full).
 
 ## Run it
 
 ```bash
 npm install          # postinstall copies the Stockfish WASM build into public/stockfish/
-npm run dev          # http://localhost:3000  (optional: ?user=Killer5291&game=0&depth=14)
+npm run dev          # http://localhost:3000  (optional: ?user=Killer5291&g=<gameId>&depth=14)
 npm run build && npm start   # production
 ```
 
@@ -56,9 +71,10 @@ Tests / checks:
 ```bash
 npm test                                   # unit tests: classifier, sacrifice detection, tactics, explainer, parser
 npm run test:analysis -- Killer5291 0 14   # headless: fetch a real game, run Stockfish in Node, print classifications
-npm run screenshot -- 0 28                 # needs dev server + Playwright (python) + Chrome;
-                                           # writes overview/move/overlay/overlay-mobile screenshots, tests
-                                           # overlay keys, Esc/close button, mobile sheet, reduced motion
+npm run screenshot -- 5 28                 # needs dev server + Playwright (python) + Chrome; args: game index, ply
+                                           # writes overview/move/overlay/mobile list/mobile review screenshots, tests
+                                           # preloading + pause, settings persistence, overlay keys, Esc/close,
+                                           # mobile list -> /game/<id> -> back with scroll restore, reduced motion
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move
 ```
 
@@ -86,7 +102,11 @@ files. No COOP/COEP headers are needed because the single-threaded engine doesn'
 ## Architecture
 
 ```
-src/app/page.tsx              Client UI: username form, game list, review panel
+src/app/page.tsx              Client UI: username form, game list, review panel (desktop side-by-side)
+src/app/game/[id]/page.tsx    Full-screen mobile review with sticky header
+src/lib/engineManager.ts      Shared Stockfish worker + lock; user analysis pre-empts background preloading
+src/lib/preloader.ts          Background preloading (visibility, idle, battery/charging, settings)
+src/lib/settings.ts, analysisCache.ts, gamesStore.ts   localStorage settings, analysis cache, session game-list cache
 src/app/api/games/route.ts    GET /api/games?username=…  → server fetch from Chess.com (descriptive User-Agent,
                               sequential requests, 5-min revalidate cache), returns normalized GameSummary[]
 src/lib/chesscom.ts           Chess.com API client + normalization (result, color, time control, opening)
