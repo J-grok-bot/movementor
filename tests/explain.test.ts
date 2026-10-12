@@ -86,3 +86,16 @@ test("templates vary deterministically", () => {
 test("LLM wording layer is off by default", () => {
   assert.equal(getExplanationRenderer().id, "rules");
 });
+
+test("sentences carry the engine line they refer to (for coach previews)", () => {
+  const hang = explainMove(input("4k3/8/3p4/8/8/5N2/8/4K3 w - - 0 1", "f3e5", { cls: "Blunder", before: cp(300), after: cp(0), cont: ["d6e5"], best: ["f3d4"], winLoss: 40 }));
+  const better = hang.details.findIndex((d) => d.startsWith("Better was"));
+  assert.ok(better >= 0);
+  assert.equal(hang.detailRefs?.[better], "best");
+  assert.equal(hang.details.length, hang.detailRefs?.length);
+  const mate = explainMove(input("3r2k1/5ppp/8/8/8/8/P4PPP/6K1 w - - 0 1", "a2a3", { cls: "Blunder", before: cp(-500), after: { cp: null, mate: -1 }, cont: ["d8d1"], best: ["h2h3"], winLoss: 30 }));
+  assert.equal(mate.headlineRef, "reply");
+  const exc = explainMove(input("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1", "e2e3", { cls: "Excellent", before: cp(100), after: cp(90), best: ["e2e4"] }));
+  assert.match(exc.details.join(" "), /preferred e4/);
+  assert.deepEqual(exc.detailRefs, ["best"]);
+});

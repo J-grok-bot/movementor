@@ -48,9 +48,19 @@ interface LineTacticFact {
   back: PieceSymbol;
 }
 
+/**
+ * Which engine line a sentence talks about, so the UI can offer a preview:
+ * "best" = engine's top line from the position before the move, "second" = its 2nd line,
+ * "reply" = the engine's line after the played move (starts with the opponent's reply).
+ */
+export type LineRef = "best" | "second" | "reply";
+
 export interface Explanation {
   headline: string;
   details: string[];
+  /** Optional line references: headlineRef for the headline, detailRefs[i] for details[i]. */
+  headlineRef?: LineRef | null;
+  detailRefs?: (LineRef | null)[];
   facts: Fact[];
 }
 
@@ -245,8 +255,14 @@ export function renderRuleBased(i: ExplainInput, facts: Fact[]): Explanation {
   const side = colorName(i.color === "white" ? "w" : "b");
   const other = colorName(opp(i.color === "white" ? "w" : "b"));
   const details: string[] = [];
+  const detailRefs: (LineRef | null)[] = [];
+  const detail = (text: string, ref: LineRef | null = null) => {
+    details.push(text);
+    detailRefs.push(ref);
+  };
   const san = i.san;
   let headline: string;
+  let headlineRef: LineRef | null = null;
 
   const mate = find(facts, "checkmate");
   const book = find(facts, "book");
@@ -327,16 +343,19 @@ export function renderRuleBased(i: ExplainInput, facts: Fact[]): Explanation {
       break;
     case "Excellent":
       headline = goodMoveReason() ?? pick([`${san} is an excellent move, practically as strong as the engine's pick.`, `${san} is nearly perfect.`], s);
-      if (alt) details.push(`The engine slightly preferred ${alt.san} (${alt.eval}).`);
+      if (alt) detail(`The engine slightly preferred ${alt.san} (${alt.eval}).`, "best");
       break;
     case "Good":
       headline = goodMoveReason() ?? pick([`${san} is a reasonable move.`, `${san} is fine, though not the most precise.`, `${san} keeps things under control.`], s);
-      if (alt) details.push(`${alt.san} (${alt.eval}) was a bit stronger.`);
+      if (alt) detail(`${alt.san} (${alt.eval}) was a bit stronger.`, "best");
       break;
     default: {
       // Inaccuracy, Mistake, Miss, Blunder: explain the main cause.
-      if (i.classification === "Miss" && mateMissed) headline = `${san} misses a forced mate in ${mateMissed.n}${mateMissed.best ? ` starting with ${mateMissed.best}` : ""}.`;
-      else if (i.classification === "Miss" && missed)
+      if (i.classification === "Miss" && mateMissed) {
+        headline = `${san} misses a forced mate in ${mateMissed.n}${mateMissed.best ? ` starting with ${mateMissed.best}` : ""}.`;
+        if (mateMissed.best) headlineRef = "best";
+      } else if (i.classification === "Miss" && missed) {
+        if (missed.best) headlineRef = "best";
         headline = pick(
           [
             `${san} misses the chance to punish ${missed.opponentMove}.${missed.best && missed.gain >= 1 ? ` ${missed.best} would have won ${materialWords(missed.gain)}.` : missed.best ? ` ${missed.best} was the way.` : ""}`,
@@ -344,21 +363,28 @@ export function renderRuleBased(i: ExplainInput, facts: Fact[]): Explanation {
           ],
           s,
         );
-      else if (mateAllowed)
+      } else if (mateAllowed) {
         headline = pick([`${san} allows mate in ${mateAllowed.n}${mateAllowed.reply ? ` after ${mateAllowed.reply}` : ""}.`, `${san} walks into a forced mate in ${mateAllowed.n}.`], s);
-      else if (mateMissed) headline = `${san} lets a forced mate in ${mateMissed.n} slip away.`;
-      else if (hangs && !(lost && lost.amount > VALUE[hangs.piece] + 0.5))
+        headlineRef = "reply";
+      } else if (mateMissed) {
+        headline = `${san} lets a forced mate in ${mateMissed.n} slip away.`;
+        headlineRef = "best";
+      } else if (hangs && !(lost && lost.amount > VALUE[hangs.piece] + 0.5)) {
+        if (hangs.reply) headlineRef = "reply";
         headline = pick(
           [`${san} leaves the ${NAME[hangs.piece]} on ${hangs.square} hanging${hangs.reply ? `: ${hangs.reply} just takes it` : ""}.`, `${san} drops the ${NAME[hangs.piece]} on ${hangs.square}.`, `After ${san}, the ${NAME[hangs.piece]} on ${hangs.square} is unprotected and can be taken.`],
           s,
         );
-      else if (replyTac)
+      } else if (replyTac) {
         headline = pick([`${san} allows ${tacticPhrase(replyTac)}.`, `${san} runs into ${tacticPhrase(replyTac)}.`], s);
-      else if (lost)
+        headlineRef = "reply";
+      } else if (lost) {
         headline = pick([`${san} loses ${materialWords(lost.amount)}${lost.reply ? ` after ${lost.reply}` : ""}.`, `${san} gives away ${materialWords(lost.amount)}.`, `${san} costs ${materialWords(lost.amount)} in the engine's line.`], s);
-      else if (wonBest)
+        headlineRef = "reply";
+      } else if (wonBest) {
         headline = pick([`${san} misses a chance to win ${materialWords(wonBest.amount)}.`, `${san} overlooks a way to win ${materialWords(wonBest.amount)}.`], s);
-      else
+        headlineRef = "best";
+      } else
         headline = pick(
           [`${san} lets the advantage slip (${i.formatEval(i.evalBefore)} → ${i.formatEval(i.evalAfter)}).`, `${san} worsens ${side}'s position (${i.formatEval(i.evalBefore)} → ${i.formatEval(i.evalAfter)}).`, `${san} is imprecise and hands ${other} the better chances (${i.formatEval(i.evalAfter)}).`],
           s,
@@ -367,14 +393,17 @@ export function renderRuleBased(i: ExplainInput, facts: Fact[]): Explanation {
         let d = `Better was ${alt.san} (${alt.eval})`;
         if (bestTac) d += `: ${tacticSentence(bestTac).replace(/^\S+ /, "it ")}`;
         else if (wonBest && !headline.includes("win")) d += `, winning ${materialWords(wonBest.amount)}`;
-        details.push(`${d}.`);
+        detail(`${d}.`, "best");
+        // The headline's line is the same one: show the button on the "Better was …" sentence only.
+        if (headlineRef === "best") headlineRef = null;
       }
-      if (replyTac && !headline.includes(replyTac.san)) details.push(`Watch out for ${tacticPhrase(replyTac)}.`);
-      if (lost && hangs && !headline.includes("loses")) details.push(`In the engine's line ${side} ends up ${materialWords(lost.amount)} down.`);
-      if (capture && !headline.includes("takes")) details.push(`Taking the ${NAME[capture.captured]} on ${capture.square} doesn't make up for it.`);
+      if (replyTac && !headline.includes(replyTac.san)) detail(`Watch out for ${tacticPhrase(replyTac)}.`, "reply");
+      if (lost && hangs && !headline.includes("loses")) detail(`In the engine's line ${side} ends up ${materialWords(lost.amount)} down.`, headlineRef === "reply" ? null : "reply");
+      if (capture && !headline.includes("takes")) detail(`Taking the ${NAME[capture.captured]} on ${capture.square} doesn't make up for it.`);
     }
   }
-  return { headline, details, facts };
+  if (i.classification === "Great" && only?.second && headline.includes(only.second)) headlineRef = "second";
+  return { headline, details, facts, headlineRef, detailRefs };
 }
 
 export function explainMove(i: ExplainInput): Explanation {

@@ -23,7 +23,7 @@ import { getCachedAnalysis, saveAnalysis } from "@/lib/analysisCache";
 import { CLASS_STYLE, FLAGGED } from "@/lib/classification";
 import { CLASSIFICATIONS } from "@/lib/classify";
 import { loadOpeningBook } from "@/lib/openingBook";
-import { getExplanationRenderer, type Explanation } from "@/lib/explain";
+import { getExplanationRenderer, type Explanation, type LineRef } from "@/lib/explain";
 import { Overview } from "./Overview";
 import { LineExplorer, type ExplorerState } from "./LineExplorer";
 import type { GameSummary } from "@/lib/chesscom";
@@ -379,6 +379,13 @@ export function Review({
           <>
             {/* What happened on this move first (right under the board on mobile), then the engine's better move. */}
             <MoveDetail
+              onPreviewRef={(ref) => {
+                if (!current) return;
+                const line = ref === "reply" ? current.continuation : current.lines[ref === "best" ? 0 : 1];
+                if (!line) return;
+                if (ref === "reply") openPreview(`a${ply}-${line.rank}`, line, 1, `Engine continuation after ${curLabel}`);
+                else openPreview(`b${ply}-${line.rank}`, line, 1, `Instead of ${curLabel}, which was played`);
+              }}
               move={current}
               prev={current ? (analysis.moves[current.ply - 2] ?? null) : null}
               opening={analysis.opening?.name ?? null}
@@ -557,14 +564,54 @@ const ARTICLE: Partial<Record<Classification, string>> = {
   Miss: "a miss",
 };
 
+/**
+ * Which engine line each coach sentence refers to. Uses the explicit refs from the explainer; analyses cached
+ * before refs existed fall back to spotting the line's first move (SAN) in the sentence.
+ * No "best"/"second" refs when the played move was the engine's top move.
+ */
+function sentenceRefs(exp: Explanation, move: MoveAnalysis): { headline: LineRef | null; details: (LineRef | null)[] } {
+  const isTop = move.bestMoveUci === move.uci;
+  const available = (r: LineRef | null | undefined): LineRef | null => {
+    if (!r) return null;
+    if (r === "reply") return move.continuation?.san.length ? r : null;
+    if (isTop) return null;
+    return move.lines[r === "best" ? 0 : 1]?.san.length ? r : null;
+  };
+  if (exp.headlineRef !== undefined || exp.detailRefs) {
+    return { headline: available(exp.headlineRef), details: exp.details.map((_, i) => available(exp.detailRefs?.[i])) };
+  }
+  const has = (text: string, san: string | undefined) =>
+    !!san && new RegExp(`(^|[\\s(:,])${san.replace(/[+#=]/g, (c) => `\\${c}`)}(?=[\\s).,:+#]|$)`).test(text);
+  const guess = (text: string): LineRef | null =>
+    available(has(text, move.lines[0]?.san[0]) ? "best" : has(text, move.continuation?.san[0]) ? "reply" : has(text, move.lines[1]?.san[0]) ? "second" : null);
+  const details = exp.details.map(guess);
+  const headline = guess(exp.headline);
+  return { headline: headline && details.includes(headline) ? null : headline, details };
+}
+
+function PreviewPill({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="ml-1.5 inline-flex translate-y-[-1px] items-center rounded-full bg-zinc-700 px-2 py-px align-middle text-[11px] leading-4 text-zinc-100 hover:bg-zinc-600"
+      title="Show this line on a board"
+      data-testid="coach-preview"
+    >
+      ▶ Preview
+    </button>
+  );
+}
+
 function MoveDetail({
   move,
   prev,
   opening,
+  onPreviewRef,
 }: {
   move: MoveAnalysis | null;
   prev: MoveAnalysis | null;
   opening: string | null;
+  onPreviewRef: (ref: LineRef) => void;
 }) {
   const [rendered, setRendered] = useState<Explanation | null>(null);
   // Optional wording layer (off by default): only runs if a non-"rules" renderer is configured.
@@ -605,6 +652,7 @@ function MoveDetail({
     );
   const s = CLASS_STYLE[move.classification];
   const exp = rendered ?? move.explanation;
+  const refs = sentenceRefs(exp, move);
   const label =
     ARTICLE[move.classification] ??
     (move.classification === "Best"
@@ -638,10 +686,14 @@ function MoveDetail({
         style={{ borderColor: s.color }}
         data-testid="coach"
       >
-        <p className="text-zinc-100">{exp.headline}</p>
+        <p className="text-zinc-100">
+          {exp.headline}
+          {refs.headline && <PreviewPill onClick={() => onPreviewRef(refs.headline!)} />}
+        </p>
         {exp.details.map((d, i) => (
           <p key={i} className="mt-0.5 text-zinc-400">
             {d}
+            {refs.details[i] && <PreviewPill onClick={() => onPreviewRef(refs.details[i]!)} />}
           </p>
         ))}
       </div>
