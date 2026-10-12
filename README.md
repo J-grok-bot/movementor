@@ -68,6 +68,11 @@ server-side engine cost.
 - **Coach previews:** coach sentences that mention an alternative line ("The engine slightly preferred Ba3",
   "Better was h5", "runs into Ng3+") get an inline ▶ Preview pill that plays that line on the board (blue)
   (no pill for the engine's own top move).
+- **Graph markers:** the overview and review win% graphs mark key moments with small class-coloured badges
+  (only !! Brilliant and ?? Blunder by default; ! Great and ? / ⊘ Mistakes/Misses via legend toggles, saved locally;
+  inaccuracies are never marked). White's moves sit above the line (light ring), Black's below (dark ring). Hover/tap
+  shows e.g. "28... Rxf1 ?? Blunder, -3.6 → +5.0"; click jumps to the move. Nearby markers merge into one badge with
+  a count that opens a list, so the graph stays clean at 390px.
 - **Openings tab** (`/openings`, top nav Review | Openings):
   - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
     position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations
@@ -98,6 +103,7 @@ npm run screenshot -- 5 28                 # needs dev server + Playwright (pyth
                                            # writes overview/move/mobile list/mobile review screenshots, tests
                                            # preloading + pause, settings persistence, preview keys, Esc/Resume,
                                            # mobile list -> /game/<id> -> back with scroll restore, reduced motion
+python3 scripts/graph-markers-test.py [baseUrl] # graph badges: defaults, toggles, tooltip, jump, clusters
 python3 scripts/deviation-test.py [baseUrl] # blue previews, amber moves, live eval, truncation, Resume, no jumps
 python3 scripts/openings-test.py [baseUrl]  # /openings: explorer, transpositions, search, walkthrough, practice
 python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
