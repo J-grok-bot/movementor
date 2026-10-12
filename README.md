@@ -27,7 +27,9 @@ server-side engine cost.
 - **Mobile-first navigation:** on narrow screens (< 1024px) the list and the review are separate views. Tapping a game
   opens a full-screen review at `/game/<id>` with a sticky header (back button, result, opponent, analysis progress);
   back returns to the list at the same scroll position. Desktop keeps the side-by-side layout (`/?user=…&g=<id>`
-  deep links; `/game/<id>` redirects there on wide screens).
+  deep links; `/game/<id>` redirects there on wide screens). In review mode a fixed bottom bar (⏮ ◀ ▶ ⏭, move
+  counter, current move) sits above Safari's toolbar via `env(safe-area-inset-bottom)`. Stepping moves never scrolls
+  the window: the move list scrolls only inside its own box, panels keep stable heights and scroll anchoring is off.
 - **Background preloading:** after the list loads, the newest 3 un-reviewed games are analyzed one at a time in the
   same worker while the tab is visible and idle, with subtle % progress on the list item. On touch devices it only
   runs while `navigator.getBattery()` reports charging (no Battery API means no preloading on mobile). Opening a game
@@ -75,6 +77,7 @@ npm run screenshot -- 5 28                 # needs dev server + Playwright (pyth
                                            # writes overview/move/overlay/mobile list/mobile review screenshots, tests
                                            # preloading + pause, settings persistence, overlay keys, Esc/close,
                                            # mobile list -> /game/<id> -> back with scroll restore, reduced motion
+python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move
 ```
 

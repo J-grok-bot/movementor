@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { analyzePgn, formatEval, lineFens, numberedLine, type GameAnalysis, type MoveAnalysis, type Classification, type LineInfo } from "@/lib/analysis";
 import { runUserAnalysis } from "@/lib/engineManager";
 import { getCachedAnalysis, saveAnalysis } from "@/lib/analysisCache";
@@ -149,6 +149,18 @@ export function Review({
     return () => window.removeEventListener("keydown", onKey);
   }, [go, ply, maxPly, preview, previewFens.length, stepPreview, mode, closePreview]);
 
+  const sideRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = sideRef.current;
+    if (!el) return;
+    if (mode !== "review") {
+      el.style.minHeight = "";
+      return;
+    }
+    const h = el.getBoundingClientRect().height;
+    if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = `${Math.ceil(h)}px`;
+  });
+
   const current: MoveAnalysis | null = analysis && ply > 0 ? analysis.moves[ply - 1] : null;
   // The real board always shows the played game; explored lines live in the LineExplorer overlay.
   const gameFen = current ? current.fenAfter : (analysis?.initialFen ?? START_FEN);
@@ -206,6 +218,9 @@ export function Review({
   const exploring = !!preview && !closing;
   return (
     <div className="relative flex flex-col gap-4 lg:flex-row">
+      {analysis && !preview && (
+        <MobileNav ply={ply} maxPly={maxPly} label={curLabel} current={current} onGo={go} />
+      )}
       {preview && (
         <LineExplorer
           key={preview.id}
@@ -246,7 +261,7 @@ export function Review({
           </div>
         </div>
         <PlayerTag p={bottomPlayer} />
-        <div className="mt-3 flex justify-center gap-2">
+        <div className="mt-3 hidden justify-center gap-2 lg:flex">
           {[
             ["⏮", 0, "First (Home)"],
             ["◀", ply - 1, "Previous (←)"],
@@ -264,11 +279,12 @@ export function Review({
             </button>
           ))}
         </div>
-        <p className="mt-1 text-center text-xs text-zinc-500">Use ← → arrow keys to step through moves</p>
+        <p className="mt-1 hidden text-center text-xs text-zinc-500 lg:block">Use ← → arrow keys to step through moves</p>
       </div>
 
-      {/* Side panel */}
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      {/* Side panel. Its height only ratchets up while stepping, so a shorter explanation can't shrink the page
+          and make the browser clamp (jump) the scroll position. */}
+      <div ref={sideRef} className="flex min-w-0 flex-1 flex-col gap-3">
         <StatusLine status={status} depth={depth} engineName={engineName} />
         {analysis && (
           <>
@@ -388,12 +404,12 @@ function MoveDetail({ move, prev, opening }: { move: MoveAnalysis | null; prev: 
     };
   }, [move, prev, opening]);
 
-  if (!move) return <div className="rounded-lg bg-zinc-800/60 p-3 text-sm text-zinc-400">Starting position. Press → to step through the game.</div>;
+  if (!move) return <div className="min-h-[8.5rem] rounded-lg bg-zinc-800/60 p-3 text-sm text-zinc-400">Starting position. Press → to step through the game.</div>;
   const s = CLASS_STYLE[move.classification];
   const exp = rendered ?? move.explanation;
   const label = ARTICLE[move.classification] ?? (move.classification === "Best" ? "the best move" : `a ${move.classification.toLowerCase()}`);
   return (
-    <div className="rounded-lg bg-zinc-800/60 p-3 text-sm" data-testid="move-detail">
+    <div className="min-h-[8.5rem] rounded-lg bg-zinc-800/60 p-3 text-sm" data-testid="move-detail">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
           <span className="inline-flex h-6 min-w-7 items-center justify-center rounded px-1 text-xs font-bold text-white" style={{ backgroundColor: s.color }}>
@@ -436,7 +452,7 @@ function EngineLines({
 }) {
   if (!lines.length) return null;
   return (
-    <div className="rounded-lg border border-zinc-800 p-2 text-sm" data-testid="engine-lines">
+    <div className="min-h-[7rem] rounded-lg border border-zinc-800 p-2 text-sm" data-testid="engine-lines">
       <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</div>
       {lines.map((line) => {
         const id = `${idPrefix}-${line.rank}`;
@@ -485,7 +501,14 @@ function EngineLines({
 function MoveList({ moves, ply, onSelect }: { moves: MoveAnalysis[]; ply: number; onSelect: (p: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    ref.current?.querySelector(`[data-ply="${ply}"]`)?.scrollIntoView({ block: "nearest" });
+    // Scroll only the list's own container (never the window: scrollIntoView would also scroll the page on mobile).
+    const box = ref.current;
+    const el = box?.querySelector<HTMLElement>(`[data-ply="${ply}"]`);
+    if (!box || !el) return;
+    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    const bottom = top + el.offsetHeight;
+    if (top < box.scrollTop) box.scrollTop = Math.max(0, top - 4);
+    else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight + 4;
   }, [ply]);
   const rows: [MoveAnalysis, MoveAnalysis | undefined][] = [];
   for (let i = 0; i < moves.length; i += 2) {
@@ -514,7 +537,7 @@ function MoveList({ moves, ply, onSelect }: { moves: MoveAnalysis[]; ply: number
       <span />
     );
   return (
-    <div ref={ref} className="max-h-80 overflow-y-auto rounded-lg border border-zinc-800 text-sm" data-testid="move-list">
+    <div ref={ref} className="max-h-56 overflow-y-auto overscroll-contain rounded-lg border lg:max-h-80 border-zinc-800 text-sm" data-testid="move-list">
       {rows.map(([w, b], i) => (
         <div key={i} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-1 px-1 odd:bg-zinc-900">
           <span className="text-right text-zinc-500">{w.moveNumber}.</span>
@@ -523,5 +546,47 @@ function MoveList({ moves, ply, onSelect }: { moves: MoveAnalysis[]; ply: number
         </div>
       ))}
     </div>
+  );
+}
+
+/** Mobile-only bottom bar: always reachable, sits above Safari's toolbar via the safe-area inset. */
+function MobileNav({
+  ply,
+  maxPly,
+  label,
+  current,
+  onGo,
+}: {
+  ply: number;
+  maxPly: number;
+  label: string;
+  current: MoveAnalysis | null;
+  onGo: (p: number) => void;
+}) {
+  const btn = "flex-1 rounded-lg bg-zinc-700 py-2.5 text-lg active:bg-zinc-600 disabled:opacity-40";
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-zinc-950/95 px-3 pt-2 backdrop-blur lg:hidden"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)" }}
+      data-testid="mobile-nav"
+    >
+      <div className="mb-1.5 flex items-center justify-center gap-2 text-xs text-zinc-400" data-testid="mobile-nav-counter">
+        <span>
+          Move {ply}/{maxPly}
+        </span>
+        {current && (
+          <span className="truncate font-mono text-zinc-200">
+            · {label}{" "}
+            <span style={{ color: CLASS_STYLE[current.classification].color }}>{CLASS_STYLE[current.classification].symbol}</span>
+          </span>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button className={btn} onClick={() => onGo(0)} disabled={ply === 0} aria-label="First move" data-testid="nav-first">⏮</button>
+        <button className={btn} onClick={() => onGo(ply - 1)} disabled={ply === 0} aria-label="Previous move" data-testid="nav-prev">◀</button>
+        <button className={btn} onClick={() => onGo(ply + 1)} disabled={ply >= maxPly} aria-label="Next move" data-testid="nav-next">▶</button>
+        <button className={btn} onClick={() => onGo(maxPly)} disabled={ply >= maxPly} aria-label="Last move" data-testid="nav-last">⏭</button>
+      </div>
+    </nav>
   );
 }

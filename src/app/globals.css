@@ -10,3 +10,10 @@ body {
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* Stepping through moves re-renders the coach/lines panels; browser scroll anchoring (WebKit/Safari, Chromium)
+   would then nudge the page. The review never wants the window to move unless the user scrolls. */
+html,
+body {
+  overflow-anchor: none;
+}
