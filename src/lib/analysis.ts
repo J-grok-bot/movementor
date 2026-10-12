@@ -138,7 +138,7 @@ export function moveAccuracy(winLoss: number): number {
   return Math.max(0, Math.min(100, a));
 }
 
-function toWhiteEval(score: EngineScore, sideToMove: "w" | "b"): Eval {
+export function toWhiteEval(score: EngineScore, sideToMove: "w" | "b"): Eval {
   const sign = sideToMove === "w" ? 1 : -1;
   if (score.mate !== undefined) {
     if (score.mate === 0) return { cp: null, mate: 0, winner: sideToMove === "w" ? "black" : "white" };

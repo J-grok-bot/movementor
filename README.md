@@ -60,6 +60,20 @@ server-side engine cost.
   the real board, over the game list. On narrow screens it's a bottom sheet with a mini "Played game" board. The real
   board stays at the played position, dimmed and labelled "Played game, frozen". ← → / Home / End / Esc drive the
   overlay while it's open. Open/close is animated and respects `prefers-reduced-motion`.
+- **Coach previews:** coach sentences that mention an alternative line ("The engine slightly preferred Ba3",
+  "Better was h5", "runs into Ng3+") get an inline ▶ Preview pill that opens that line in the explorer overlay
+  (no pill for the engine's own top move).
+- **Openings tab** (`/openings`, top nav Review | Openings):
+  - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
+    position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations
+    from the current position with the opening each leads to (tap to play), and an optional Stockfish eval.
+  - Fuzzy search by name ("sicilian najdorf", "london", typos OK, ECO codes) → guided walkthrough with prev/next,
+    the name of each intermediate position and an arrow for the next move, plus a Practice mode where you play the
+    next book move yourself (correct/incorrect feedback, hint).
+  - Shareable URLs: `/openings?moves=e4,c5,Nf3`, `…&walk=1&step=3&practice=1`, or `?opening=<exact name>`.
+  - The game overview links the game's opening name to `/openings` with the game's book moves loaded.
+  - Data: `public/opening-tree.json` (all lines + book moves per position), built with `public/openings.json` by
+    `node scripts/build-openings.mjs`.
 - Results are cached in `localStorage` per game + depth + MultiPV (LRU eviction when storage is full).
 
 ## Run it
@@ -79,6 +93,7 @@ npm run screenshot -- 5 28                 # needs dev server + Playwright (pyth
                                            # writes overview/move/overlay/mobile list/mobile review screenshots, tests
                                            # preloading + pause, settings persistence, overlay keys, Esc/close,
                                            # mobile list -> /game/<id> -> back with scroll restore, reduced motion
+python3 scripts/openings-test.py [baseUrl]  # /openings: explorer, transpositions, search, walkthrough, practice
 python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move
 ```

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { GameList } from "@/components/GameList";
 import { Review } from "@/components/Review";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { AppNav } from "@/components/AppNav";
 import { Footer } from "@/components/Footer";
 import type { GameSummary } from "@/lib/chesscom";
 import { fetchGames, getCachedGames, LAST_USER_KEY, LIST_SCROLL_KEY } from "@/lib/gamesStore";
@@ -112,10 +113,11 @@ export default function Home() {
     <main className="mx-auto max-w-7xl p-3 sm:p-4">
       <header className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
+          <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.svg" alt="" width={32} height={32} className="h-8 w-8" />
             MoveMentor
+            <AppNav className="ml-2" />
           </h1>
           <p className="hidden text-sm text-zinc-400 sm:block">Free move-by-move game review. Stockfish runs locally in your browser.</p>
         </div>

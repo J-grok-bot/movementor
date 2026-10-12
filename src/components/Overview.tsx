@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useMemo } from "react";
 import type { GameAnalysis } from "@/lib/analysis";
 import type { GameSummary } from "@/lib/chesscom";
@@ -11,6 +12,12 @@ export function Overview({ analysis, game, onStart }: { analysis: GameAnalysis; 
   const sides = ["white", "black"] as const;
   const moments = useMemo(() => keyMoments(analysis), [analysis]);
   const summary = useMemo(() => summaryParagraph(analysis, game), [analysis, game]);
+  // The game's moves while it was still in the opening book (fallback: first 8 plies), for the Openings link.
+  const openingMoves = useMemo(() => {
+    let n = 0;
+    while (n < analysis.moves.length && analysis.moves[n].classification === "Book") n++;
+    return analysis.moves.slice(0, n || Math.min(8, analysis.moves.length)).map((m) => m.san);
+  }, [analysis]);
   const phases = useMemo(() => ({ white: phaseAccuracy(analysis, "white"), black: phaseAccuracy(analysis, "black") }), [analysis]);
 
   return (
@@ -21,7 +28,19 @@ export function Overview({ analysis, game, onStart }: { analysis: GameAnalysis; 
           <p className="text-sm text-zinc-400">
             {game.white.username} vs {game.black.username} · {game.timeClass} {game.timeControl} ·{" "}
             {new Date(game.endTime * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-            {analysis.opening ? ` · ${analysis.opening.eco} ${analysis.opening.name}` : game.opening ? ` · ${game.opening}` : ""}
+            {(analysis.opening || game.opening) && (
+              <>
+                {" · "}
+                <Link
+                  href={`/openings?moves=${encodeURIComponent(openingMoves.join(","))}`}
+                  className="text-sky-300 underline decoration-sky-300/40 hover:decoration-sky-300"
+                  title="Explore this opening"
+                  data-testid="opening-link"
+                >
+                  {analysis.opening ? `${analysis.opening.eco} ${analysis.opening.name}` : game.opening}
+                </Link>
+              </>
+            )}
           </p>
         </div>
         <button onClick={() => onStart(0)} className="rounded-lg bg-green-600 px-6 py-2.5 text-base font-bold hover:bg-green-500" data-testid="start-review">
