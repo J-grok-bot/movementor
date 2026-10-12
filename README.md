@@ -30,6 +30,8 @@ server-side engine cost.
   deep links; `/game/<id>` redirects there on wide screens). In review mode a fixed bottom bar (⏮ ◀ ▶ ⏭, move
   counter, current move) sits above Safari's toolbar via `env(safe-area-inset-bottom)`. Stepping moves never scrolls
   the window: the move list scrolls only inside its own box, panels keep stable heights and scroll anchoring is off.
+  Below the board come the coach card and the engine's best move (compact: eval + first moves, "…" opens the full
+  line in the explorer, 2nd-best behind "+1 more line"), then the continuation line, accuracy, graph and move list.
 - **Background preloading:** after the list loads, the newest 3 un-reviewed games are analyzed one at a time in the
   same worker while the tab is visible and idle, with subtle % progress on the list item. On touch devices it only
   runs while `navigator.getBattery()` reports charging (no Battery API means no preloading on mobile). Opening a game
