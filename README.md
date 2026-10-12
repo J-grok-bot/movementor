@@ -63,6 +63,12 @@ server-side engine cost.
 - **Coach previews:** coach sentences that mention an alternative line ("The engine slightly preferred Ba3",
   "Better was h5", "runs into Ng3+") get an inline ▶ Preview pill that opens that line in the explorer overlay
   (no pill for the engine's own top move).
+- **Your analysis (sandbox):** during the review you can drag or tap-tap a move on the game board (or on the
+  explorer board while previewing an engine line). Playing the move that was actually played just advances the game;
+  any other legal move opens a "Your analysis from 14... Re8" overlay (amber, separate from the played game) where you
+  keep moving pieces, step back/undo, and get a live Stockfish eval for every position (eval chip, best move, short PV,
+  deepening 6 → 18; stale searches are stopped, background preloading pauses). Promotion picker included; Esc or
+  "Back to game" returns.
 - **Openings tab** (`/openings`, top nav Review | Openings):
   - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
     position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations
@@ -93,6 +99,7 @@ npm run screenshot -- 5 28                 # needs dev server + Playwright (pyth
                                            # writes overview/move/overlay/mobile list/mobile review screenshots, tests
                                            # preloading + pause, settings persistence, overlay keys, Esc/close,
                                            # mobile list -> /game/<id> -> back with scroll restore, reduced motion
+python3 scripts/sandbox-test.py [baseUrl]   # sandbox moves mid-review + mid-preview, live eval, no page jumps
 python3 scripts/openings-test.py [baseUrl]  # /openings: explorer, transpositions, search, walkthrough, practice
 python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move

@@ -19,6 +19,8 @@ import {
   type LineInfo,
 } from "@/lib/analysis";
 import { runUserAnalysis } from "@/lib/engineManager";
+import { applyUserMove, type UserMove } from "@/lib/sandbox";
+import { useBoardInput } from "./useBoardInput";
 import { getCachedAnalysis, saveAnalysis } from "@/lib/analysisCache";
 import { CLASS_STYLE, FLAGGED } from "@/lib/classification";
 import { CLASSIFICATIONS } from "@/lib/classify";
@@ -145,13 +147,13 @@ export function Review({
     }, 300);
   }, []);
   const openPreview = useCallback(
-    (id: string, line: LineInfo, step: number, context: string) => {
+    (id: string, line: LineInfo, step: number, context: string, sandbox = false) => {
       if (closeTimer.current) {
         window.clearTimeout(closeTimer.current);
         closeTimer.current = null;
       }
       setClosing(false);
-      setPreview({ id, line, step, context });
+      setPreview({ id, line, step, context, sandbox });
     },
     [],
   );
@@ -234,6 +236,45 @@ export function Review({
     : (analysis?.moves[0]?.lines ?? []);
   const lineAfter: LineInfo | null = current ? current.continuation : null;
 
+  // User moves: on the game board they either advance the game (the move actually played) or open a sandbox.
+  const canInput = !!analysis && mode === "review" && !preview;
+  const onBoardMove = useCallback(
+    (m: UserMove) => {
+      if (!analysis) return;
+      const outcome = applyUserMove({ startFen: gameFen, uci: [], san: [] }, 0, m);
+      if (outcome.kind !== "branch") return;
+      if (analysis.moves[ply]?.uci === outcome.line.uci[0]) {
+        go(ply + 1); // that's the game move: just advance
+        return;
+      }
+      openPreview("sandbox", outcome.line, 1, `Your analysis from ${curLabel || "the start"}`, true);
+    },
+    [analysis, gameFen, ply, go, openPreview, curLabel],
+  );
+  const boardInput = useBoardInput(gameFen, canInput, onBoardMove);
+
+  const onExplorerMove = useCallback(
+    (m: UserMove) => {
+      if (!preview) return;
+      const outcome = applyUserMove(preview.line, preview.step, m);
+      if (outcome.kind === "advance") stepPreview(outcome.step);
+      else if (outcome.kind === "branch") {
+        const tokens = numberedLine(preview.line.startFen, preview.line.san);
+        const at = preview.step > 0 ? `${tokens[preview.step - 1].label ?? ""} ${tokens[preview.step - 1].san}`.trim() : null;
+        const context = preview.sandbox ? preview.context : `Your analysis from ${at ?? (curLabel || "the start")}`;
+        setPreview({ id: "sandbox", line: outcome.line, step: outcome.step, context, sandbox: true });
+      }
+    },
+    [preview, stepPreview, curLabel],
+  );
+  const undoSandbox = useCallback(() => {
+    setPreview((pv) => {
+      if (!pv || pv.step === 0) return pv;
+      const keep = pv.step - 1;
+      return { ...pv, step: keep, line: { ...pv.line, uci: pv.line.uci.slice(0, keep), san: pv.line.san.slice(0, keep) } };
+    });
+  }, []);
+
   const boardOptions = useMemo(() => {
     const squareStyles: Record<string, React.CSSProperties> = {};
     const arrows: { startSquare: string; endSquare: string; color: string }[] =
@@ -258,7 +299,8 @@ export function Review({
       id: "review-board",
       position: fen,
       boardOrientation: (flipped ? "black" : "white") as "white" | "black",
-      allowDragging: false,
+      allowDragging: canInput,
+      ...boardInput.handlers,
       allowDrawingArrows: true,
       arrows,
       squareStyles,
@@ -266,7 +308,7 @@ export function Review({
       darkSquareStyle: { backgroundColor: "#769656" },
       lightSquareStyle: { backgroundColor: "#eeeed2" },
     };
-  }, [fen, flipped, current, preview]);
+  }, [fen, flipped, current, preview, canInput, boardInput.handlers]);
 
   const topPlayer = flipped ? game.white : game.black;
   const bottomPlayer = flipped ? game.black : game.white;
@@ -301,7 +343,9 @@ export function Review({
       )}
       {preview && (
         <LineExplorer
-          key={preview.id}
+          key={preview.sandbox ? "sandbox" : preview.id}
+          onUserMove={onExplorerMove}
+          onUndo={undoSandbox}
           layout={explorerLayout}
           state={preview}
           fens={previewFens}
@@ -318,6 +362,7 @@ export function Review({
           exploring ? "opacity-60 saturate-50" : ""
         }`}
         data-testid="game-board-column"
+        data-fen={gameFen}
         data-frozen={exploring ? "true" : "false"}
       >
         <PlayerTag p={topPlayer} />
@@ -331,7 +376,8 @@ export function Review({
         <div className="flex gap-2">
           <EvalBar ev={ev} flipped={flipped} />
           <div className="relative flex-1">
-            <Chessboard options={boardOptions} />
+            <Chessboard options={{ ...boardOptions, squareStyles: { ...boardOptions.squareStyles, ...boardInput.styles } }} />
+            {boardInput.picker}
             {current && (
               <div
                 className="pointer-events-none absolute right-1 top-1 rounded-full px-2 py-0.5 text-xs font-bold text-white shadow"
@@ -865,6 +911,7 @@ function MoveList({
     m ? (
       <button
         data-ply={m.ply}
+        data-uci={m.uci}
         onClick={() => onSelect(m.ply)}
         className={`flex w-full items-center justify-between rounded px-2 py-0.5 text-left font-mono ${ply === m.ply ? "bg-blue-600/40" : "hover:bg-zinc-800"}`}
       >
