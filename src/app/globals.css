@@ -17,3 +17,13 @@ html,
 body {
   overflow-anchor: none;
 }
+
+/* Review board hue changes (green = game, blue = engine line, amber = your moves) fade unless reduced motion. */
+.review-board [data-square] {
+  transition: background-color 300ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-board [data-square] {
+    transition: none;
+  }
+}

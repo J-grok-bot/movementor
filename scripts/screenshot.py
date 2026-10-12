@@ -1,5 +1,6 @@
 # End-to-end browser check: loads the app in headless Chrome, checks background preloading, analyzes
-# a real game (overview, reviewed move, engine-line explorer), then the mobile list -> review flow.
+# a real game (overview, reviewed move, engine-line preview on the board), then the mobile list -> review flow.
+# Deviations (blue/amber, Resume, truncation) are covered in scripts/deviation-test.py.
 # usage: python3 scripts/screenshot.py [gameIndex] [ply]
 import sys, os, re, time
 from playwright.sync_api import sync_playwright
@@ -47,45 +48,30 @@ with sync_playwright() as p:
         print("  ", lines.nth(i).inner_text().replace("\n", " ")[:300])
     pg.screenshot(path=OUT + "screenshot-move.png", full_page=True)
 
-    # Open the line explorer overlay from the top engine line (3rd move), step with the keyboard.
+    # Engine line preview on the same board (blue): click the 3rd move of the top line, step with the keyboard.
+    COL = "[data-testid=game-board-column]"
     first_id = pg.locator("[data-line]").first.get_attribute("data-line")
     pg.click(f'[data-line="{first_id}"][data-step="3"]')
-    pg.wait_for_selector('[data-testid=line-explorer][data-state=open]')
-    pg.keyboard.press("ArrowRight")
-    pg.wait_for_timeout(500)
-    print("explorer:", pg.inner_text("[data-testid=explorer-title]"), "| step", pg.inner_text("[data-testid=explorer-step]"))
-    print("game board frozen:", pg.get_attribute("[data-testid=game-board-column]", "data-frozen"))
-    pg.keyboard.press("Home"); pg.wait_for_timeout(150)
-    print("after Home:", pg.inner_text("[data-testid=explorer-step]"))
-    pg.keyboard.press("End"); pg.wait_for_timeout(150)
-    print("after End:", pg.inner_text("[data-testid=explorer-step]"))
-    pg.keyboard.press("ArrowLeft"); pg.keyboard.press("ArrowLeft"); pg.wait_for_timeout(400)
-    print("after 2x Left:", pg.inner_text("[data-testid=explorer-step]"))
-    pg.screenshot(path=OUT + "screenshot-overlay.png", full_page=True)
-    pg.keyboard.press("Escape")
-    pg.wait_for_selector("[data-testid=line-explorer]", state="detached", timeout=3000)
-    print("after Esc: explorer closed, board frozen:", pg.get_attribute("[data-testid=game-board-column]", "data-frozen"))
-    # Re-open and close with the button
-    pg.click('[data-testid=engine-lines] button:has-text("Preview")')
-    pg.wait_for_selector('[data-testid=line-explorer][data-state=open]')
-    pg.click("[data-testid=explorer-close]")
-    pg.wait_for_selector("[data-testid=line-explorer]", state="detached", timeout=3000)
-    print("close button works: True")
-    # Main game navigation still works after closing
     pg.keyboard.press("ArrowRight"); pg.wait_for_timeout(300)
-    print("game nav after close:", pg.inner_text("[data-testid=move-detail]").split("\n")[1] if "\n" in pg.inner_text("[data-testid=move-detail]") else pg.inner_text("[data-testid=move-detail]")[:40])
-
-    # Reduced motion: overlay opens/closes without transition delay
+    bn = lambda: pg.get_attribute("[data-testid=deviation-banner]", "data-step") + "/" + pg.get_attribute("[data-testid=deviation-banner]", "data-len")
+    print("preview:", pg.get_attribute(COL, "data-hue"), "|", pg.inner_text("[data-testid=deviation-banner]").replace("\n", " "))
+    pg.keyboard.press("Home"); pg.wait_for_timeout(150); print("after Home:", bn())
+    pg.keyboard.press("End"); pg.wait_for_timeout(150); print("after End:", bn())
+    pg.keyboard.press("ArrowLeft"); pg.keyboard.press("ArrowLeft"); pg.wait_for_timeout(300); print("after 2x Left:", bn())
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+    print("after Esc:", pg.get_attribute(COL, "data-hue"), "| banner gone:", pg.locator("[data-testid=deviation-banner]").count() == 0)
+    pg.click('[data-testid=engine-lines] button:has-text("Preview")'); pg.click("[data-testid=resume]"); pg.wait_for_timeout(200)
+    print("Resume button works:", pg.get_attribute(COL, "data-hue") == "green")
+    pg.click(f'[data-ply="{ply}"]'); pg.keyboard.press("ArrowRight"); pg.wait_for_timeout(300)
+    print("game nav after resume:", pg.get_attribute(COL, "data-ply"))
+    # Reduced motion: no hue transition on the board squares
     rm = ctx.new_page()
     rm.emulate_media(reduced_motion="reduce")
     rm.goto(pg.url, wait_until="networkidle")
     rm.wait_for_selector("[data-testid=overview]", timeout=240000)
     rm.click("[data-testid=start-review]"); rm.click(f'[data-ply="{ply}"]')
-    rm.click('[data-testid=engine-lines] button:has-text("Preview")')
-    rm.wait_for_selector('[data-testid=line-explorer][data-state=open]')
-    rm.keyboard.press("Escape")
-    rm.wait_for_selector("[data-testid=line-explorer]", state="detached", timeout=100)
-    print("reduced-motion close is immediate: True")
+    print("reduced-motion square transition:", rm.evaluate("getComputedStyle(document.querySelector('.review-board [data-square]')).transitionDuration"),
+          "| normal:", pg.evaluate("getComputedStyle(document.querySelector('.review-board [data-square]')).transitionDuration"))
     rm.close()
     pg.click("[data-testid=back-overview]")
     print("back to overview:", pg.locator("[data-testid=overview]").count() == 1)
@@ -134,15 +120,6 @@ with sync_playwright() as p:
     m.mouse.wheel(0, 300); m.wait_for_timeout(300)
     hdr = m.locator("[data-testid=game-header]").bounding_box()
     print("sticky header top after scrolling:", round(hdr["y"]))
-    fid = m.locator("[data-line]").first.get_attribute("data-line")
-    m.click(f'[data-line="{fid}"][data-step="3"]')
-    m.wait_for_selector('[data-testid=line-explorer][data-state=open]')
-    m.wait_for_timeout(500)
-    box = m.locator("[data-testid=line-explorer]").bounding_box()
-    print("mobile sheet box:", {k: round(v) for k, v in box.items()}, "| mini played board visible:", m.locator("[data-testid=explorer-played-mini]").is_visible())
-    m.screenshot(path=OUT + "screenshot-overlay-mobile.png")
-    m.keyboard.press("Escape")
-    m.wait_for_selector("[data-testid=line-explorer]", state="detached", timeout=3000)
     m.click("[data-testid=back-to-list]")
     m.wait_for_selector("button[data-game-id]")
     print("back ->", m.url.replace(BASE, ""))

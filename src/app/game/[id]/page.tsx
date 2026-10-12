@@ -94,7 +94,7 @@ function GameView() {
         </div>
       </header>
       <div className="p-3">
-        {game && <Review key={game.id} game={game} depth={settings.depth} multiPv={settings.multiPv} onStatus={setStatus} explorerLayout="sheet" />}
+        {game && <Review key={game.id} game={game} depth={settings.depth} multiPv={settings.multiPv} onStatus={setStatus} />}
         <Footer />
       </div>
     </main>

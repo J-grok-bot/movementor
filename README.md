@@ -11,8 +11,8 @@ server-side engine cost.
 
 ![overview](docs/screenshot-overview.png)
 ![move review](docs/screenshot-move.png)
-![line explorer overlay](docs/screenshot-overlay.png)
-![line explorer on mobile](docs/screenshot-overlay-mobile.png)
+![engine line on the board (blue)](docs/screenshot-deviation-blue.png)
+![your own moves on the board (amber)](docs/screenshot-deviation-amber.png)
 
 <p>
   <img alt="mobile game list" src="docs/screenshot-mobile-list.png" width="300">
@@ -31,7 +31,7 @@ server-side engine cost.
   counter, current move) sits above Safari's toolbar via `env(safe-area-inset-bottom)`. Stepping moves never scrolls
   the window: the move list scrolls only inside its own box, panels keep stable heights and scroll anchoring is off.
   Below the board come the coach card and the engine's best move (compact: eval + first moves, "…" opens the full
-  line in the explorer, 2nd-best behind "+1 more line"), then the continuation line, accuracy, graph and move list.
+  line on the board in blue, 2nd-best behind "+1 more line"), then the continuation line, accuracy, graph and move list.
 - **Background preloading:** after the list loads, the newest 3 un-reviewed games are analyzed one at a time in the
   same worker while the tab is visible and idle, with subtle % progress on the list item. On touch devices it only
   runs while `navigator.getBattery()` reports charging (no Battery API means no preloading on mobile). Opening a game
@@ -54,21 +54,20 @@ server-side engine cost.
 - **Engine lines for every move:** the panel shows the engine's top move with its full principal variation
   (SAN with move numbers) and eval from the position *before* the move ("Engine's best instead of …"), the
   2nd-best line (MultiPV 2, toggle "2nd-best line"), and the engine's line from the position *after* the move.
-- **Line explorer overlay:** click any move in a line (or "▶ Preview") and a separate raised card slides out with
-  its own slate-blue board theme. It has an "Exploring: 17... Rg8 line (not played)" header, the line's eval, a move strip
-  with the current move highlighted, step controls and "Back to game". On desktop (≥ lg) it slides out to the left of
-  the real board, over the game list. On narrow screens it's a bottom sheet with a mini "Played game" board. The real
-  board stays at the played position, dimmed and labelled "Played game, frozen". ← → / Home / End / Esc drive the
-  overlay while it's open. Open/close is animated and respects `prefers-reduced-motion`.
+- **One board, three hues:** the review always uses the same board. **Green** = on the game. **Blue** = an engine
+  line (▶ Preview buttons, coach-card pills, or clicking a move in a line) played out on the board. **Amber** = your
+  own moves: drag or tap-tap at any time (on the game, during a preview, or while already off the game). Playing
+  the game's actual next move just advances the game. While off the game a banner above the board says e.g.
+  "Off game · 3 moves from 14... Re8" or "Engine's best instead of 14... Re8 · 2/9" with a **Resume** button; Resume
+  or Esc returns to the game move where the deviation started (highlighted in the move list).
+- **Live analysis while off the game:** the coach-card slot shows Stockfish's eval, best move and top line for every
+  position (deepening 6 → 18 on the shared worker; stale searches are stopped and background preloading pauses).
+  Its ▶ Preview continues that line on the same board in blue. ← → / the bottom nav step through the deviation; if
+  you step back and play a different move, the rest of the line is replaced (no tree). Legal moves only, with a
+  promotion picker. Hue changes fade, except with `prefers-reduced-motion`.
 - **Coach previews:** coach sentences that mention an alternative line ("The engine slightly preferred Ba3",
-  "Better was h5", "runs into Ng3+") get an inline ▶ Preview pill that opens that line in the explorer overlay
+  "Better was h5", "runs into Ng3+") get an inline ▶ Preview pill that plays that line on the board (blue)
   (no pill for the engine's own top move).
-- **Your analysis (sandbox):** during the review you can drag or tap-tap a move on the game board (or on the
-  explorer board while previewing an engine line). Playing the move that was actually played just advances the game;
-  any other legal move opens a "Your analysis from 14... Re8" overlay (amber, separate from the played game) where you
-  keep moving pieces, step back/undo, and get a live Stockfish eval for every position (eval chip, best move, short PV,
-  deepening 6 → 18; stale searches are stopped, background preloading pauses). Promotion picker included; Esc or
-  "Back to game" returns.
 - **Openings tab** (`/openings`, top nav Review | Openings):
   - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
     position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations
@@ -96,10 +95,10 @@ Tests / checks:
 npm test                                   # unit tests: classifier, sacrifice detection, tactics, explainer, parser
 npm run test:analysis -- Killer5291 0 14   # headless: fetch a real game, run Stockfish in Node, print classifications
 npm run screenshot -- 5 28                 # needs dev server + Playwright (python) + Chrome; args: game index, ply
-                                           # writes overview/move/overlay/mobile list/mobile review screenshots, tests
-                                           # preloading + pause, settings persistence, overlay keys, Esc/close,
+                                           # writes overview/move/mobile list/mobile review screenshots, tests
+                                           # preloading + pause, settings persistence, preview keys, Esc/Resume,
                                            # mobile list -> /game/<id> -> back with scroll restore, reduced motion
-python3 scripts/sandbox-test.py [baseUrl]   # sandbox moves mid-review + mid-preview, live eval, no page jumps
+python3 scripts/deviation-test.py [baseUrl] # blue previews, amber moves, live eval, truncation, Resume, no jumps
 python3 scripts/openings-test.py [baseUrl]  # /openings: explorer, transpositions, search, walkthrough, practice
 python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move
@@ -145,7 +144,7 @@ src/lib/tactics.ts            chess.js helpers: material, hanging pieces, forks,
 src/lib/explain.ts            Fact detection + varied rule-based templates; pluggable ExplanationRenderer
 src/lib/overview.ts           Phase accuracy, rating estimate, key moments, summary paragraph
 src/lib/openingBook.ts        Opening-book lookup; data in public/openings.json (built by scripts/build-openings.mjs)
-src/components/LineExplorer.tsx  Engine-line explorer overlay (side card on desktop, bottom sheet on mobile)
+src/lib/deviation.ts          One-board deviation state: engine line (blue) / user moves (amber), Resume target
 src/components/Overview.tsx   Overview screen shown after analysis
 src/lib/browserEngine.ts      Web Worker wrapper around /stockfish/stockfish-19-lite-single.js (UCI over postMessage)
 src/components/Review.tsx     Board (react-chessboard), nav, eval bar/graph, move list, summary

@@ -11,7 +11,6 @@ import {
 import {
   analyzePgn,
   formatEval,
-  lineFens,
   numberedLine,
   type GameAnalysis,
   type MoveAnalysis,
@@ -19,15 +18,26 @@ import {
   type LineInfo,
 } from "@/lib/analysis";
 import { runUserAnalysis } from "@/lib/engineManager";
-import { applyUserMove, type UserMove } from "@/lib/sandbox";
+import { uciLineToSan, type UserMove } from "@/lib/sandbox";
+import {
+  bannerText,
+  continueWithEngine,
+  deviationFen,
+  lastMove,
+  startEngineLine,
+  stepDeviation,
+  userMoveInDeviation,
+  userMoveOnGame,
+  type Deviation,
+} from "@/lib/deviation";
 import { useBoardInput } from "./useBoardInput";
+import { useLiveEval, type LiveEval } from "./useLiveEval";
 import { getCachedAnalysis, saveAnalysis } from "@/lib/analysisCache";
 import { CLASS_STYLE, FLAGGED } from "@/lib/classification";
 import { CLASSIFICATIONS } from "@/lib/classify";
 import { loadOpeningBook } from "@/lib/openingBook";
 import { getExplanationRenderer, type Explanation, type LineRef } from "@/lib/explain";
 import { Overview } from "./Overview";
-import { LineExplorer, type ExplorerState } from "./LineExplorer";
 import type { GameSummary } from "@/lib/chesscom";
 import { EvalBar } from "./EvalBar";
 import { EvalGraph } from "./EvalGraph";
@@ -55,23 +65,19 @@ export function Review({
   depth,
   multiPv = 2,
   onStatus,
-  explorerLayout = "auto",
 }: {
   game: GameSummary;
   depth: number;
   multiPv?: number;
   onStatus?: (s: Status) => void;
-  explorerLayout?: "auto" | "sheet";
 }) {
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [ply, setPly] = useState(0);
   const [mode, setMode] = useState<"overview" | "review">("overview");
   const [engineName, setEngineName] = useState<string>("Stockfish");
-  // Engine-line preview: board temporarily shows a position inside an engine line.
-  const [preview, setPreview] = useState<ExplorerState | null>(null);
-  const [closing, setClosing] = useState(false);
-  const closeTimer = useRef<number | null>(null);
+  // One board: on the game (green), or deviated into an engine line (blue) / the user's own moves (amber).
+  const [dev, setDev] = useState<Deviation | null>(null);
   const flipped = game.userColor === "black";
 
   useEffect(() => onStatus?.(status), [status, onStatus]);
@@ -82,6 +88,7 @@ export function Review({
     const signal = { aborted: false };
     setAnalysis(null);
     setPly(0);
+    setDev(null);
     setMode("overview");
     const cached = getCachedAnalysis(game.id, depth, multiPv);
     if (cached) {
@@ -101,8 +108,7 @@ export function Review({
             multiPv,
             book,
             signal,
-            onProgress: (done, total) =>
-              !signal.aborted && setStatus({ kind: "analyzing", done, total }),
+            onProgress: (done, total) => !signal.aborted && setStatus({ kind: "analyzing", done, total }),
           });
         });
         saveAnalysis(game.id, depth, multiPv, result);
@@ -110,11 +116,7 @@ export function Review({
         setAnalysis(result);
         setStatus({ kind: "done", seconds: (performance.now() - t0) / 1000 });
       } catch (e) {
-        if (!signal.aborted)
-          setStatus({
-            kind: "error",
-            message: e instanceof Error ? e.message : String(e),
-          });
+        if (!signal.aborted) setStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) });
       }
     })();
     return () => {
@@ -125,68 +127,39 @@ export function Review({
   const maxPly = analysis?.moves.length ?? 0;
   const go = useCallback(
     (p: number) => {
-      setPreview(null);
+      setDev(null);
       setPly(Math.max(0, Math.min(maxPly, p)));
     },
     [maxPly],
   );
-  const closePreview = useCallback(() => {
-    const reduced =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      setPreview(null);
-      return;
-    }
-    setClosing(true);
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => {
-      closeTimer.current = null;
-      setPreview(null);
-      setClosing(false);
-    }, 300);
+  /** Resume / Esc: back to the game position where the deviation started. */
+  const resume = useCallback(() => {
+    setDev((d) => {
+      if (d) setPly(d.basePly);
+      return null;
+    });
   }, []);
-  const openPreview = useCallback(
-    (id: string, line: LineInfo, step: number, context: string, sandbox = false) => {
-      if (closeTimer.current) {
-        window.clearTimeout(closeTimer.current);
-        closeTimer.current = null;
-      }
-      setClosing(false);
-      setPreview({ id, line, step, context, sandbox });
+  const stepDev = useCallback((n: number) => setDev((d) => (d ? stepDeviation(d, n) : d)), []);
+
+  const plyLabel = useCallback(
+    (p: number) => {
+      const m = analysis && p > 0 ? analysis.moves[p - 1] : null;
+      return m ? `${m.moveNumber}${m.color === "white" ? "." : "..."} ${m.san}` : "";
     },
-    [],
-  );
-  const previewFens = useMemo(
-    () => (preview ? lineFens(preview.line.startFen, preview.line.uci) : []),
-    [preview],
-  );
-  const stepPreview = useCallback(
-    (step: number) =>
-      setPreview((pv) =>
-        pv
-          ? { ...pv, step: Math.max(0, Math.min(previewFens.length, step)) }
-          : pv,
-      ),
-    [previewFens.length],
+    [analysis],
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === "INPUT" || mode !== "review")
-        return;
-      if (preview) {
-        if (e.key === "ArrowLeft") stepPreview(preview.step - 1);
-        else if (e.key === "ArrowRight") stepPreview(preview.step + 1);
-        else if (e.key === "Home" || e.key === "ArrowUp") stepPreview(0);
-        else if (e.key === "End" || e.key === "ArrowDown")
-          stepPreview(previewFens.length);
-        else if (e.key === "Escape" || e.key === "Backspace") closePreview();
+      if ((e.target as HTMLElement)?.tagName === "INPUT" || mode !== "review") return;
+      if (dev) {
+        if (e.key === "ArrowLeft") stepDev(dev.step - 1);
+        else if (e.key === "ArrowRight") stepDev(dev.step + 1);
+        else if (e.key === "Home" || e.key === "ArrowUp") stepDev(0);
+        else if (e.key === "End" || e.key === "ArrowDown") stepDev(dev.uci.length);
+        else if (e.key === "Escape") resume();
         else return;
-        e.preventDefault();
-        return;
-      }
-      if (e.key === "ArrowLeft") go(ply - 1);
+      } else if (e.key === "ArrowLeft") go(ply - 1);
       else if (e.key === "ArrowRight") go(ply + 1);
       else if (e.key === "Home" || e.key === "ArrowUp") go(0);
       else if (e.key === "End" || e.key === "ArrowDown") go(maxPly);
@@ -195,16 +168,7 @@ export function Review({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [
-    go,
-    ply,
-    maxPly,
-    preview,
-    previewFens.length,
-    stepPreview,
-    mode,
-    closePreview,
-  ]);
+  }, [go, ply, maxPly, dev, stepDev, resume, mode]);
 
   const sideRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -215,86 +179,70 @@ export function Review({
       return;
     }
     const h = el.getBoundingClientRect().height;
-    if (h > (parseFloat(el.style.minHeight) || 0))
-      el.style.minHeight = `${Math.ceil(h)}px`;
+    if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = `${Math.ceil(h)}px`;
   });
 
-  const current: MoveAnalysis | null =
-    analysis && ply > 0 ? analysis.moves[ply - 1] : null;
-  // The real board always shows the played game; explored lines live in the LineExplorer overlay.
-  const gameFen = current
-    ? current.fenAfter
-    : (analysis?.initialFen ?? START_FEN);
-  const fen = gameFen;
-  const ev = current ? current.evalAfter : (analysis?.initialEval ?? null);
-  const curLabel = current
-    ? `${current.moveNumber}${current.color === "white" ? "." : "..."} ${current.san}`
-    : "";
+  const current: MoveAnalysis | null = analysis && ply > 0 ? analysis.moves[ply - 1] : null;
+  const gameFen = current ? current.fenAfter : (analysis?.initialFen ?? START_FEN);
+  const fen = dev ? deviationFen(dev) : gameFen;
+  const live = useLiveEval(dev ? fen : null); // every position in a deviation gets evaluated
+  const ev = dev ? (live?.ev ?? null) : current ? current.evalAfter : (analysis?.initialEval ?? null);
+  const curLabel = plyLabel(ply);
+  const baseLabel = dev ? plyLabel(dev.basePly) : "";
   // Lines from the position before the current move ("instead of this move") and after it ("from here").
-  const linesBefore: LineInfo[] = current
-    ? current.lines
-    : (analysis?.moves[0]?.lines ?? []);
+  const linesBefore: LineInfo[] = current ? current.lines : (analysis?.moves[0]?.lines ?? []);
   const lineAfter: LineInfo | null = current ? current.continuation : null;
 
-  // User moves: on the game board they either advance the game (the move actually played) or open a sandbox.
-  const canInput = !!analysis && mode === "review" && !preview;
+  /** Start a blue engine-line preview on the main board. */
+  const previewLine = useCallback(
+    (id: string, line: LineInfo, step: number, kind: "instead" | "after") => {
+      const basePly = kind === "instead" ? Math.max(0, ply - 1) : ply;
+      const title = kind === "instead" && current ? `Engine's best instead of ${curLabel}` : `Engine line from ${curLabel || "the start"}`;
+      setDev(startEngineLine(basePly, line, title, step, id));
+    },
+    [ply, current, curLabel],
+  );
+
+  // User moves (drag or tap-tap) at any time: the real next game move advances; anything else deviates (amber).
+  const canInput = !!analysis && mode === "review";
   const onBoardMove = useCallback(
     (m: UserMove) => {
       if (!analysis) return;
-      const outcome = applyUserMove({ startFen: gameFen, uci: [], san: [] }, 0, m);
-      if (outcome.kind !== "branch") return;
-      if (analysis.moves[ply]?.uci === outcome.line.uci[0]) {
-        go(ply + 1); // that's the game move: just advance
+      if (dev) {
+        const next = userMoveInDeviation(dev, m);
+        if (next) setDev(next);
         return;
       }
-      openPreview("sandbox", outcome.line, 1, `Your analysis from ${curLabel || "the start"}`, true);
+      const r = userMoveOnGame(gameFen, ply, analysis.moves[ply]?.uci ?? null, m);
+      if (r.kind === "advance") go(ply + 1);
+      else if (r.kind === "deviate") setDev(r.deviation);
     },
-    [analysis, gameFen, ply, go, openPreview, curLabel],
+    [analysis, dev, gameFen, ply, go],
   );
-  const boardInput = useBoardInput(gameFen, canInput, onBoardMove);
+  const boardInput = useBoardInput(fen, canInput, onBoardMove);
 
-  const onExplorerMove = useCallback(
-    (m: UserMove) => {
-      if (!preview) return;
-      const outcome = applyUserMove(preview.line, preview.step, m);
-      if (outcome.kind === "advance") stepPreview(outcome.step);
-      else if (outcome.kind === "branch") {
-        const tokens = numberedLine(preview.line.startFen, preview.line.san);
-        const at = preview.step > 0 ? `${tokens[preview.step - 1].label ?? ""} ${tokens[preview.step - 1].san}`.trim() : null;
-        const context = preview.sandbox ? preview.context : `Your analysis from ${at ?? (curLabel || "the start")}`;
-        setPreview({ id: "sandbox", line: outcome.line, step: outcome.step, context, sandbox: true });
-      }
-    },
-    [preview, stepPreview, curLabel],
-  );
-  const undoSandbox = useCallback(() => {
-    setPreview((pv) => {
-      if (!pv || pv.step === 0) return pv;
-      const keep = pv.step - 1;
-      return { ...pv, step: keep, line: { ...pv.line, uci: pv.line.uci.slice(0, keep), san: pv.line.san.slice(0, keep) } };
-    });
-  }, []);
-
+  const hue = dev ? (dev.kind === "engine" ? "blue" : "amber") : "green";
   const boardOptions = useMemo(() => {
     const squareStyles: Record<string, React.CSSProperties> = {};
-    const arrows: { startSquare: string; endSquare: string; color: string }[] =
-      [];
-    if (current) {
+    const arrows: { startSquare: string; endSquare: string; color: string }[] = [];
+    if (dev) {
+      const lm = lastMove(dev);
+      if (lm) {
+        squareStyles[lm.from] = { backgroundColor: "rgba(250, 204, 21, 0.45)" };
+        squareStyles[lm.to] = { backgroundColor: "rgba(250, 204, 21, 0.65)" };
+      }
+      const next = dev.uci[dev.step];
+      if (next) arrows.push({ startSquare: next.slice(0, 2), endSquare: next.slice(2, 4), color: "rgba(96, 165, 250, 0.9)" });
+      else if (live?.pv[0]) arrows.push({ startSquare: live.pv[0].slice(0, 2), endSquare: live.pv[0].slice(2, 4), color: "#22c55ecc" });
+    } else if (current) {
       const c = CLASS_STYLE[current.classification].color;
       squareStyles[current.from] = { backgroundColor: `${c}66` };
       squareStyles[current.to] = { backgroundColor: `${c}99` };
-      if (
-        FLAGGED.includes(current.classification) &&
-        current.bestMoveUci &&
-        !preview
-      ) {
-        arrows.push({
-          startSquare: current.bestMoveUci.slice(0, 2),
-          endSquare: current.bestMoveUci.slice(2, 4),
-          color: "#22c55ecc",
-        });
+      if (FLAGGED.includes(current.classification) && current.bestMoveUci) {
+        arrows.push({ startSquare: current.bestMoveUci.slice(0, 2), endSquare: current.bestMoveUci.slice(2, 4), color: "#22c55ecc" });
       }
     }
+    Object.assign(squareStyles, boardInput.styles);
     return {
       id: "review-board",
       position: fen,
@@ -305,10 +253,10 @@ export function Review({
       arrows,
       squareStyles,
       animationDurationInMs: 150,
-      darkSquareStyle: { backgroundColor: "#769656" },
-      lightSquareStyle: { backgroundColor: "#eeeed2" },
+      darkSquareStyle: { backgroundColor: HUES[hue].dark },
+      lightSquareStyle: { backgroundColor: HUES[hue].light },
     };
-  }, [fen, flipped, current, preview, canInput, boardInput.handlers]);
+  }, [fen, flipped, current, dev, live, canInput, boardInput.handlers, boardInput.styles, hue]);
 
   const topPlayer = flipped ? game.white : game.black;
   const bottomPlayer = flipped ? game.black : game.white;
@@ -329,81 +277,80 @@ export function Review({
     );
   }
 
-  const exploring = !!preview && !closing;
+  const devLabel = dev ? (dev.step > 0 ? numberedLine(dev.startFen, dev.san)[dev.step - 1] : null) : null;
   return (
     <div className="relative flex flex-col gap-4 lg:flex-row">
-      {analysis && !preview && (
-        <MobileNav
-          ply={ply}
-          maxPly={maxPly}
-          label={curLabel}
-          current={current}
-          onGo={go}
-        />
-      )}
-      {preview && (
-        <LineExplorer
-          key={preview.sandbox ? "sandbox" : preview.id}
-          onUserMove={onExplorerMove}
-          onUndo={undoSandbox}
-          layout={explorerLayout}
-          state={preview}
-          fens={previewFens}
-          flipped={flipped}
-          closing={closing}
-          playedFen={gameFen}
-          onStep={stepPreview}
-          onClose={closePreview}
-        />
-      )}
-      {/* Board column (the played game; dimmed and frozen while a line is being explored) */}
+      {analysis &&
+        (dev ? (
+          <MobileNav
+            pos={dev.step}
+            max={dev.uci.length}
+            counter={`${dev.kind === "user" ? "Off game" : "Engine line"} ${dev.step}/${dev.uci.length}`}
+            label={devLabel ? `${devLabel.label ?? ""} ${devLabel.san}`.trim() : baseLabel || "start"}
+            onGo={stepDev}
+            tone={hue}
+          />
+        ) : (
+          <MobileNav
+            pos={ply}
+            max={maxPly}
+            counter={`Move ${ply}/${maxPly}`}
+            label={curLabel}
+            current={current}
+            onGo={go}
+            tone="green"
+          />
+        ))}
+      {/* Board column: always the same board; its hue says whether you're on the game or exploring. */}
       <div
-        className={`w-full max-w-[560px] shrink-0 transition-[opacity,filter] duration-300 motion-reduce:transition-none ${
-          exploring ? "opacity-60 saturate-50" : ""
-        }`}
+        className="w-full max-w-[560px] shrink-0"
         data-testid="game-board-column"
-        data-fen={gameFen}
-        data-frozen={exploring ? "true" : "false"}
+        data-fen={fen}
+        data-hue={hue}
+        data-ply={dev ? dev.basePly : ply}
+        data-frozen={dev ? "true" : "false"}
       >
         <PlayerTag p={topPlayer} />
-        <div
-          className={`mb-1 rounded px-2 py-1 text-xs ${exploring ? "bg-zinc-800 text-zinc-300" : "invisible"}`}
-          aria-hidden={!exploring}
-        >
-          🔒 Played game, frozen
-          {curLabel ? ` after ${curLabel}` : " at the start"}
-        </div>
+        <DeviationBanner dev={dev} text={dev ? bannerText(dev, baseLabel) : ""} onResume={resume} />
         <div className="flex gap-2">
           <EvalBar ev={ev} flipped={flipped} />
-          <div className="relative flex-1">
-            <Chessboard options={{ ...boardOptions, squareStyles: { ...boardOptions.squareStyles, ...boardInput.styles } }} />
+          <div
+            className={`review-board relative flex-1 rounded-sm ring-2 transition-shadow duration-300 motion-reduce:transition-none ${HUES[hue].ring}`}
+            data-testid="review-board"
+          >
+            <Chessboard options={boardOptions} />
             {boardInput.picker}
-            {current && (
+            {current && !dev && (
               <div
                 className="pointer-events-none absolute right-1 top-1 rounded-full px-2 py-0.5 text-xs font-bold text-white shadow"
-                style={{
-                  backgroundColor: CLASS_STYLE[current.classification].color,
-                }}
+                style={{ backgroundColor: CLASS_STYLE[current.classification].color }}
               >
-                {CLASS_STYLE[current.classification].symbol}{" "}
-                {current.classification}
+                {CLASS_STYLE[current.classification].symbol} {current.classification}
               </div>
             )}
           </div>
         </div>
         <PlayerTag p={bottomPlayer} />
         <div className="mt-3 hidden justify-center gap-2 lg:flex">
-          {[
-            ["⏮", 0, "First (Home)"],
-            ["◀", ply - 1, "Previous (←)"],
-            ["▶", ply + 1, "Next (→)"],
-            ["⏭", maxPly, "Last (End)"],
-          ].map(([label, target, title]) => (
+          {(dev
+            ? [
+                ["⏮", 0, "Line start (Home)"],
+                ["◀", dev.step - 1, "Previous (←)"],
+                ["▶", dev.step + 1, "Next (→)"],
+                ["⏭", dev.uci.length, "Line end (End)"],
+              ]
+            : [
+                ["⏮", 0, "First (Home)"],
+                ["◀", ply - 1, "Previous (←)"],
+                ["▶", ply + 1, "Next (→)"],
+                ["⏭", maxPly, "Last (End)"],
+              ]
+          ).map(([label, target, title]) => (
             <button
               key={String(title)}
               title={String(title)}
-              onClick={() => go(Number(target))}
-              disabled={!analysis || !!preview}
+              onClick={() => (dev ? stepDev(Number(target)) : go(Number(target)))}
+              disabled={!analysis}
               className="rounded bg-zinc-700 px-4 py-2 text-lg hover:bg-zinc-600 disabled:opacity-40"
             >
               {label}
@@ -411,51 +358,45 @@ export function Review({
           ))}
         </div>
         <p className="mt-1 hidden text-center text-xs text-zinc-500 lg:block">
-          Use ← → arrow keys to step through moves
+          ← → step · drag or tap pieces to try your own moves · Esc resumes the game
         </p>
       </div>
 
       {/* Side panel. Its height only ratchets up while stepping, so a shorter explanation can't shrink the page
           and make the browser clamp (jump) the scroll position. */}
       <div ref={sideRef} className="flex min-w-0 flex-1 flex-col gap-3">
-        {!analysis && (
-          <StatusLine status={status} depth={depth} engineName={engineName} />
-        )}
+        {!analysis && <StatusLine status={status} depth={depth} engineName={engineName} />}
         {analysis && (
           <>
-            {/* What happened on this move first (right under the board on mobile), then the engine's better move. */}
-            <MoveDetail
-              onPreviewRef={(ref) => {
-                if (!current) return;
-                const line = ref === "reply" ? current.continuation : current.lines[ref === "best" ? 0 : 1];
-                if (!line) return;
-                if (ref === "reply") openPreview(`a${ply}-${line.rank}`, line, 1, `Engine continuation after ${curLabel}`);
-                else openPreview(`b${ply}-${line.rank}`, line, 1, `Instead of ${curLabel}, which was played`);
-              }}
-              move={current}
-              prev={current ? (analysis.moves[current.ply - 2] ?? null) : null}
-              opening={analysis.opening?.name ?? null}
-            />
+            {/* Coach card on the game; live analysis of the current position while deviated. */}
+            {dev ? (
+              <LivePanel
+                dev={dev}
+                fen={fen}
+                live={live}
+                onPreview={(pv) => setDev((d) => (d ? continueWithEngine(d, pv, `Engine line from ${baseLabel || "the start"}`) : d))}
+              />
+            ) : (
+              <MoveDetail
+                onPreviewRef={(ref) => {
+                  if (!current) return;
+                  const line = ref === "reply" ? current.continuation : current.lines[ref === "best" ? 0 : 1];
+                  if (!line) return;
+                  if (ref === "reply") previewLine(`a${ply}-${line.rank}`, line, 1, "after");
+                  else previewLine(`b${ply}-${line.rank}`, line, 1, "instead");
+                }}
+                move={current}
+                prev={current ? (analysis.moves[current.ply - 2] ?? null) : null}
+                opening={analysis.opening?.name ?? null}
+              />
+            )}
             <EngineLines
               compact
-              title={
-                current
-                  ? `Engine's best instead of ${current.moveNumber}${current.color === "white" ? "." : "..."} ${current.san}`
-                  : "Engine's best from the start"
-              }
+              title={current ? `Engine's best instead of ${curLabel}` : "Engine's best from the start"}
               lines={linesBefore}
               idPrefix={`b${ply}`}
-              preview={preview}
-              onPreview={(id, line, step) =>
-                openPreview(
-                  id,
-                  line,
-                  step,
-                  current
-                    ? `Instead of ${curLabel}, which was played`
-                    : "From the starting position",
-                )
-              }
+              preview={dev?.id ? { id: dev.id, step: dev.step } : null}
+              onPreview={(id, line, step) => previewLine(id, line, step, current ? "instead" : "after")}
             />
             {lineAfter && (
               <EngineLines
@@ -463,45 +404,112 @@ export function Review({
                 title="Engine's line from this position"
                 lines={[lineAfter]}
                 idPrefix={`a${ply}`}
-                preview={preview}
-                onPreview={(id, line, step) =>
-                  openPreview(
-                    id,
-                    line,
-                    step,
-                    `Engine continuation after ${curLabel}`,
-                  )
-                }
+                preview={dev?.id ? { id: dev.id, step: dev.step } : null}
+                onPreview={(id, line, step) => previewLine(id, line, step, "after")}
               />
             )}
             <Summary analysis={analysis} game={game} />
-            <EvalGraph analysis={analysis} ply={ply} onSelect={go} />
+            <EvalGraph analysis={analysis} ply={dev ? dev.basePly : ply} onSelect={go} />
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                onClick={() => setMode("overview")}
-                className="rounded bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-700"
-                data-testid="back-overview"
-              >
+              <button onClick={() => setMode("overview")} className="rounded bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-700" data-testid="back-overview">
                 ← Overview
               </button>
-              <StatusLine
-                status={status}
-                depth={depth}
-                engineName={engineName}
-              />
+              <StatusLine status={status} depth={depth} engineName={engineName} />
             </div>
-            <MoveList moves={analysis.moves} ply={ply} onSelect={go} />
+            <MoveList moves={analysis.moves} ply={dev ? dev.basePly : ply} deviated={dev ? (dev.kind === "user" ? "amber" : "blue") : null} onSelect={go} />
           </>
         )}
-        <a
-          href={game.url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-zinc-500 underline"
-        >
+        <a href={game.url} target="_blank" rel="noreferrer" className="text-xs text-zinc-500 underline">
           View original game on Chess.com
         </a>
       </div>
+    </div>
+  );
+}
+
+const HUES = {
+  green: { dark: "#769656", light: "#eeeed2", ring: "ring-transparent" },
+  blue: { dark: "#5f7fb8", light: "#dce6f5", ring: "ring-sky-400/70" },
+  amber: { dark: "#b8873b", light: "#f6e7c4", ring: "ring-amber-400/80" },
+} as const;
+
+/** Stable-height slot above the board: empty on the game, a banner with Resume while deviated. */
+function DeviationBanner({ dev, text, onResume }: { dev: Deviation | null; text: string; onResume: () => void }) {
+  const tone = dev?.kind === "user" ? "border-amber-400/60 bg-amber-500/15 text-amber-100" : "border-sky-400/60 bg-sky-500/15 text-sky-100";
+  return (
+    <div className="mb-1 flex h-9 items-center" aria-live="polite">
+      {dev && (
+        <div className={`flex w-full items-center gap-2 rounded-md border px-2 py-1 text-xs ${tone}`} data-testid="deviation-banner" data-kind={dev.kind} data-step={dev.step} data-len={dev.uci.length}>
+          <span className="min-w-0 flex-1 truncate font-semibold">{text}</span>
+          <button
+            onClick={onResume}
+            className="shrink-0 rounded-md bg-white px-3 py-1 text-xs font-bold text-zinc-900 shadow hover:bg-zinc-200"
+            data-testid="resume"
+            title="Back to the game (Esc)"
+          >
+            ↩ Resume
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Live Stockfish analysis of the current deviation position (in place of the coach card). */
+function LivePanel({ dev, fen, live, onPreview }: { dev: Deviation; fen: string; live: LiveEval | null; onPreview: (pvUci: string[]) => void }) {
+  const san = live ? uciLineToSan(fen, live.pv, 8) : [];
+  const tokens = san.length ? numberedLine(fen, san) : [];
+  const visible = tokens.slice(0, 6);
+  const amber = dev.kind === "user";
+  return (
+    <div className={`min-h-[7.5rem] rounded-lg p-3 text-sm ${amber ? "bg-amber-950/40 ring-1 ring-amber-500/30" : "bg-sky-950/40 ring-1 ring-sky-500/30"}`} data-testid="live-analysis">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-xs font-semibold uppercase tracking-wide ${amber ? "text-amber-300" : "text-sky-300"}`}>
+          {amber ? "Your analysis · not played" : "Engine line · not played"}
+        </span>
+        <span className="font-mono text-xs text-zinc-400" data-testid="live-depth">
+          {live ? `depth ${live.depth}` : "thinking…"}
+        </span>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="w-14 shrink-0 rounded bg-zinc-100 px-1 text-center font-mono text-xs font-bold text-zinc-900" data-testid="live-eval-chip">
+          {live ? formatEval(live.ev) : "…"}
+        </span>
+        <span className="text-zinc-300">
+          {live ? (
+            san[0] ? (
+              <>
+                Best: <span className="font-mono font-semibold text-green-400" data-testid="live-best">{san[0]}</span>
+              </>
+            ) : (
+              "Game over"
+            )
+          ) : (
+            "Stockfish is evaluating this position…"
+          )}
+        </span>
+      </div>
+      {visible.length > 0 && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="flex h-6 min-w-0 flex-1 flex-wrap items-center overflow-hidden font-mono text-zinc-300" data-testid="live-line">
+            {visible.map((t) => (
+              <span key={t.index} className="mr-1 whitespace-nowrap">
+                {t.label && <span className="mr-0.5 text-zinc-500">{t.label}</span>}
+                {t.san}
+              </span>
+            ))}
+            {tokens.length > visible.length && <span className="text-zinc-500">…</span>}
+          </div>
+          <button
+            onClick={() => live && onPreview(live.pv)}
+            className="shrink-0 rounded bg-zinc-700 px-2 py-0.5 text-xs hover:bg-zinc-600"
+            data-testid="live-preview"
+            title="Play this line on the board"
+          >
+            ▶ Preview
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -877,10 +885,13 @@ function EngineLines({
 function MoveList({
   moves,
   ply,
+  deviated,
   onSelect,
 }: {
   moves: MoveAnalysis[];
   ply: number;
+  /** While deviated, `ply` is the deviation-start move and gets a hued outline. */
+  deviated: "blue" | "amber" | null;
   onSelect: (p: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -913,7 +924,16 @@ function MoveList({
         data-ply={m.ply}
         data-uci={m.uci}
         onClick={() => onSelect(m.ply)}
-        className={`flex w-full items-center justify-between rounded px-2 py-0.5 text-left font-mono ${ply === m.ply ? "bg-blue-600/40" : "hover:bg-zinc-800"}`}
+        className={`flex w-full items-center justify-between rounded px-2 py-0.5 text-left font-mono ${
+          ply === m.ply
+            ? deviated === "amber"
+              ? "bg-amber-500/20 ring-1 ring-amber-400"
+              : deviated === "blue"
+                ? "bg-sky-500/20 ring-1 ring-sky-400"
+                : "bg-blue-600/40"
+            : "hover:bg-zinc-800"
+        }`}
+        data-deviation-start={deviated && ply === m.ply ? "true" : undefined}
       >
         <span>{m.san}</span>
         {m.classification !== "Good" && (
@@ -948,81 +968,57 @@ function MoveList({
   );
 }
 
-/** Mobile-only bottom bar: always reachable, sits above Safari's toolbar via the safe-area inset. */
+/** Mobile-only bottom bar: always reachable, sits above Safari's toolbar via the safe-area inset.
+ *  Steps through the game, or through the deviation line while deviated. */
 function MobileNav({
-  ply,
-  maxPly,
+  pos,
+  max,
+  counter,
   label,
   current,
   onGo,
+  tone,
 }: {
-  ply: number;
-  maxPly: number;
+  pos: number;
+  max: number;
+  counter: string;
   label: string;
-  current: MoveAnalysis | null;
+  current?: MoveAnalysis | null;
   onGo: (p: number) => void;
+  tone: "green" | "blue" | "amber";
 }) {
-  const btn =
-    "flex-1 rounded-lg bg-zinc-700 py-2.5 text-lg active:bg-zinc-600 disabled:opacity-40";
+  const btn = "flex-1 rounded-lg bg-zinc-700 py-2.5 text-lg active:bg-zinc-600 disabled:opacity-40";
+  const toneText = tone === "amber" ? "text-amber-300" : tone === "blue" ? "text-sky-300" : "text-zinc-400";
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-zinc-950/95 px-3 pt-2 backdrop-blur lg:hidden"
-      style={{
-        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)",
-      }}
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)" }}
       data-testid="mobile-nav"
     >
-      <div
-        className="mb-1.5 flex items-center justify-center gap-2 text-xs text-zinc-400"
-        data-testid="mobile-nav-counter"
-      >
-        <span>
-          Move {ply}/{maxPly}
-        </span>
-        {current && (
+      <div className={`mb-1.5 flex items-center justify-center gap-2 text-xs ${toneText}`} data-testid="mobile-nav-counter">
+        <span>{counter}</span>
+        {label && (
           <span className="truncate font-mono text-zinc-200">
-            · {label}{" "}
-            <span style={{ color: CLASS_STYLE[current.classification].color }}>
-              {CLASS_STYLE[current.classification].symbol}
-            </span>
+            · {label}
+            {current && (
+              <span className="ml-1" style={{ color: CLASS_STYLE[current.classification].color }}>
+                {CLASS_STYLE[current.classification].symbol}
+              </span>
+            )}
           </span>
         )}
       </div>
       <div className="flex gap-2">
-        <button
-          className={btn}
-          onClick={() => onGo(0)}
-          disabled={ply === 0}
-          aria-label="First move"
-          data-testid="nav-first"
-        >
+        <button className={btn} onClick={() => onGo(0)} disabled={pos === 0} aria-label="First" data-testid="nav-first">
           ⏮
         </button>
-        <button
-          className={btn}
-          onClick={() => onGo(ply - 1)}
-          disabled={ply === 0}
-          aria-label="Previous move"
-          data-testid="nav-prev"
-        >
+        <button className={btn} onClick={() => onGo(pos - 1)} disabled={pos === 0} aria-label="Previous" data-testid="nav-prev">
           ◀
         </button>
-        <button
-          className={btn}
-          onClick={() => onGo(ply + 1)}
-          disabled={ply >= maxPly}
-          aria-label="Next move"
-          data-testid="nav-next"
-        >
+        <button className={btn} onClick={() => onGo(pos + 1)} disabled={pos >= max} aria-label="Next" data-testid="nav-next">
           ▶
         </button>
-        <button
-          className={btn}
-          onClick={() => onGo(maxPly)}
-          disabled={ply >= maxPly}
-          aria-label="Last move"
-          data-testid="nav-last"
-        >
+        <button className={btn} onClick={() => onGo(max)} disabled={pos >= max} aria-label="Last" data-testid="nav-last">
           ⏭
         </button>
       </div>
