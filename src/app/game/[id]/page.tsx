@@ -60,7 +60,7 @@ function GameView() {
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl pb-28 lg:pb-0">
-      <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-900/95 backdrop-blur" data-testid="game-header">
+      <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-900/95 backdrop-blur" data-testid="game-header" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-center gap-2 px-2 py-2">
           <button onClick={back} className="rounded-md px-2 py-1.5 text-lg hover:bg-zinc-800" aria-label="Back to games" data-testid="back-to-list">
             ←

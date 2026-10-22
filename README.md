@@ -73,6 +73,9 @@ server-side engine cost.
   inaccuracies are never marked). White's moves sit above the line (light ring), Black's below (dark ring). Hover/tap
   shows e.g. "28... Rxf1 ?? Blunder, -3.6 → +5.0"; click jumps to the move. Nearby markers merge into one badge with
   a count that opens a list, so the graph stays clean at 390px.
+- **Home-screen app:** web app manifest (standalone, dark theme) plus iOS/Android icons (apple-touch 180/167/152,
+  192, 512, maskable 512, favicons). The icons come from one SVG via `node scripts/make-icons.mjs`
+  (`assets/app-icon.svg`, preview `docs/app-icon-preview.png`). Headers respect the notch safe-area insets in standalone mode.
 - **Openings tab** (`/openings`, top nav Review | Openings):
   - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
     position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations

@@ -110,7 +110,7 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto max-w-7xl p-3 sm:p-4">
+    <main className="mx-auto max-w-7xl p-3 sm:p-4" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))" }}>
       <header className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
