@@ -419,9 +419,14 @@ export function Review({
             <MoveList moves={analysis.moves} ply={dev ? dev.basePly : ply} deviated={dev ? (dev.kind === "user" ? "amber" : "blue") : null} onSelect={go} />
           </>
         )}
-        <a href={game.url} target="_blank" rel="noreferrer" className="text-xs text-zinc-500 underline">
-          View original game on Chess.com
-        </a>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <a href={game.url} target="_blank" rel="noreferrer" className="text-xs text-zinc-500 underline">
+            View original game on Chess.com
+          </a>
+          <a href={`/analyze?fen=${encodeURIComponent(fen)}`} className="text-xs text-zinc-500 underline" data-testid="open-calculator">
+            Open this position in the calculator
+          </a>
+        </div>
       </div>
     </div>
   );

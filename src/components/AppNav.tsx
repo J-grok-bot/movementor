@@ -8,6 +8,7 @@ const TABS = [
   { href: "/", label: "Review" },
   { href: "/openings", label: "Openings" },
   { href: "/puzzles", label: "Puzzles" },
+  { href: "/analyze", label: "Analyze" },
 ];
 
 /** Unsolved daily puzzles (today's + backlog), from localStorage. 0 until mounted. */

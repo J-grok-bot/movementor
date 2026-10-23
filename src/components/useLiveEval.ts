@@ -9,6 +9,7 @@ export interface LiveEval {
   depth: number;
   ev: Eval;
   pv: string[]; // UCI
+  lines: { ev: Eval; pv: string[] }[]; // MultiPV lines, best first (just line 1 when multiPv = 1)
 }
 
 const DEPTHS = [6, 10, 14, 18];
@@ -17,7 +18,7 @@ const DEPTHS = [6, 10, 14, 18];
  * Live Stockfish eval for one position, deepening step by step (6 → 18) so the number updates quickly.
  * Uses the shared worker via runUserAnalysis (pauses background preloading); a new position stops the stale search.
  */
-export function useLiveEval(fen: string | null): LiveEval | null {
+export function useLiveEval(fen: string | null, multiPv = 1, depths: number[] = DEPTHS): LiveEval | null {
   const [state, setState] = useState<LiveEval | null>(null);
   useEffect(() => {
     if (!fen) return;
@@ -25,13 +26,19 @@ export function useLiveEval(fen: string | null): LiveEval | null {
     let engine: BrowserEngine | null = null;
     const stm = fen.split(" ")[1] as "w" | "b";
     const timer = window.setTimeout(() => {
-      runUserAnalysis(1, async (e) => {
+      runUserAnalysis(multiPv, async (e) => {
         engine = e;
-        for (const d of DEPTHS) {
+        for (const d of depths) {
           if (!live) break;
           const r = await e.evaluate(fen, d);
           if (!live) break;
-          setState({ fen, depth: r.depth || d, ev: toWhiteEval(r.score, stm), pv: r.pv });
+          setState({
+            fen,
+            depth: r.depth || d,
+            ev: toWhiteEval(r.score, stm),
+            pv: r.pv,
+            lines: r.lines.filter((l) => l.pv.length).map((l) => ({ ev: toWhiteEval(l.score, stm), pv: l.pv })),
+          });
         }
         engine = null;
       }).catch(() => undefined);
@@ -41,6 +48,7 @@ export function useLiveEval(fen: string | null): LiveEval | null {
       window.clearTimeout(timer);
       engine?.stop(); // cancel the stale search; the loop exits on its bestmove
     };
-  }, [fen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fen, multiPv]);
   return state && state.fen === fen ? state : null;
 }

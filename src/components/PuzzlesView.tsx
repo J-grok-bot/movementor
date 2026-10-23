@@ -397,6 +397,11 @@ function PuzzleBoard({ entry, today, progress }: { entry: Entry; today: string; 
               <a className="underline" href={`https://lichess.org/training/${p.id}`} target="_blank" rel="noreferrer">
                 Lichess #{p.id}
               </a>
+              {" "}
+              ·{" "}
+              <a className="underline" href={`/analyze?fen=${encodeURIComponent(startState.fen)}`} data-testid="open-calculator">
+                Open in calculator
+              </a>
             </span>
           </div>
           <div className="mt-1 flex flex-wrap gap-1" data-testid="puzzle-themes">

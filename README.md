@@ -76,7 +76,7 @@ server-side engine cost.
 - **Home-screen app:** web app manifest (standalone, dark theme) plus iOS/Android icons (apple-touch 180/167/152,
   192, 512, maskable 512, favicons). The icons come from one SVG via `node scripts/make-icons.mjs`
   (`assets/app-icon.svg`, preview `docs/app-icon-preview.png`). Headers respect the notch safe-area insets in standalone mode.
-- **Openings tab** (`/openings`, top nav Review | Openings | Puzzles):
+- **Openings tab** (`/openings`, top nav Review | Openings | Puzzles | Analyze):
   - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
     position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations
     from the current position with the opening each leads to (tap to play), and an optional Stockfish eval.
@@ -104,6 +104,20 @@ server-side engine cost.
     `python3 scripts/curate-puzzles.py lichess_db_puzzle.csv.zst public/puzzles.json`. Filters: popularity ≥ 92,
     ≥ 3,000 plays, rating deviation ≤ 80, 1–4 solver moves. Then 215 per 100-point rating band, round-robin across
     each puzzle's main tactic theme (highest popularity × log plays first), with at most 30% mates.
+- **Position calculator tab** (`/analyze`):
+  - Editor: Starting position / Clear board, a palette of all 12 pieces (drag onto the board, or tap a piece and then
+    tap squares; tapping a square holding that same piece removes it), drag pieces between squares, drag off the board
+    or onto the 🗑 to remove, an eraser, side to move, castling checkboxes (auto-cleared and disabled when the king or
+    rook leaves its home square), optional en passant square (only real candidates offered), flip, FEN paste/copy.
+  - Validation with plain-language errors (one king each, no pawns on the 1st/8th rank, side not to move can't be in
+    check, ≤ 16 pieces and ≤ 8 pawns per side, no more promoted pieces than missing pawns). Calculate stays disabled
+    until the position is legal.
+  - Calculate runs the in-browser Stockfish with MultiPV 3, deepening live (depth 6 → 20): best move as a green arrow
+    + SAN, eval bar and number (or mate in N), and the top 3 lines (tap a move to play the line to there). Checkmate
+    and stalemate are reported instead of searching. Then play on: drag/tap moves, Play best move, Undo, Reset to setup,
+    Back to editor.
+  - The last edited position (and board orientation) is kept in `localStorage` (`movementor-analyze`).
+    Deep links: `/analyze?fen=<FEN>`. Review and puzzles link to the current position with "Open in calculator".
 - Results are cached in `localStorage` per game + depth + MultiPV (LRU eviction when storage is full).
 
 ## Run it
@@ -117,7 +131,7 @@ npm run build && npm start   # production
 Tests / checks:
 
 ```bash
-npm test                                   # unit tests: classifier, sacrifice detection, tactics, explainer, parser
+npm test                                   # unit tests: classifier, sacrifice detection, tactics, explainer, parser, puzzles, position editor
 npm run test:analysis -- Killer5291 0 14   # headless: fetch a real game, run Stockfish in Node, print classifications
 npm run screenshot -- 5 28                 # needs dev server + Playwright (python) + Chrome; args: game index, ply
                                            # writes overview/move/mobile list/mobile review screenshots, tests
@@ -126,6 +140,7 @@ npm run screenshot -- 5 28                 # needs dev server + Playwright (pyth
 python3 scripts/graph-markers-test.py [baseUrl] # graph badges: defaults, toggles, tooltip, jump, clusters
 python3 scripts/deviation-test.py [baseUrl] # blue previews, amber moves, live eval, truncation, Resume, no jumps
 python3 scripts/puzzles-test.py [baseUrl] # daily puzzles: try again, hint, solve, analyze, show solution, backlog, dot
+python3 scripts/analyze-test.py [baseUrl]  # /analyze: drag/tap editing, validation, calculate, play best, persistence
 python3 scripts/openings-test.py [baseUrl]  # /openings: explorer, transpositions, search, walkthrough, practice
 python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move
