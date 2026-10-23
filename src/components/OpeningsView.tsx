@@ -295,12 +295,12 @@ export function OpeningsView() {
   const done = walk && walk.step >= walk.moves.length;
 
   return (
-    <main className="mx-auto max-w-6xl p-3 sm:p-4" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))" }}>
+    <main className="mx-auto max-w-6xl p-3 sm:p-4" style={{ paddingTop: "calc(max(6px, env(safe-area-inset-top, 0px)) + 0.75rem)" }}>
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/logo.svg"
+            src="/logo.svg?v=2"
             alt=""
             width={32}
             height={32}

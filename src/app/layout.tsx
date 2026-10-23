@@ -13,14 +13,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icon.svg?v=2", type: "image/svg+xml" },
+      { url: "/icons/favicon-32.png?v=2", sizes: "32x32", type: "image/png" },
+      { url: "/icons/favicon-16.png?v=2", sizes: "16x16", type: "image/png" },
     ],
     apple: [
-      { url: "/icons/apple-touch-icon.png", sizes: "180x180" },
-      { url: "/icons/apple-touch-icon-167.png", sizes: "167x167" },
-      { url: "/icons/apple-touch-icon-152.png", sizes: "152x152" },
+      { url: "/icons/apple-touch-icon.png?v=2", sizes: "180x180" },
+      { url: "/icons/apple-touch-icon-167.png?v=2", sizes: "167x167" },
+      { url: "/icons/apple-touch-icon-152.png?v=2", sizes: "152x152" },
     ],
   },
   openGraph: {
@@ -32,8 +32,19 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body className="antialiased">
+        {/* iOS 26+ home-screen apps draw a system blur below the status bar that reaches down over the header.
+            A solid fixed bar at the very top (>= 6px tall, full width) makes iOS paint an opaque status bar instead. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(navigator.standalone||matchMedia('(display-mode: standalone)').matches||matchMedia('(display-mode: fullscreen)').matches)document.documentElement.classList.add('standalone')}catch(e){}",
+          }}
+        />
+        <div aria-hidden className="status-bar-cover" data-testid="status-bar-cover" />
+        {children}
+      </body>
     </html>
   );
 }

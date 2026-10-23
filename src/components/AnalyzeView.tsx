@@ -156,14 +156,14 @@ export function AnalyzeView() {
     <main
       className="mx-auto max-w-6xl p-3 sm:p-4"
       style={{
-        paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))",
+        paddingTop: "calc(max(6px, env(safe-area-inset-top, 0px)) + 0.75rem)",
         paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
       }}
     >
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="" width={32} height={32} className="h-8 w-8" />
+          <img src="/logo.svg?v=2" alt="" width={32} height={32} className="h-8 w-8" />
           <span className="max-[430px]:sr-only">MoveMentor</span>
           <AppNav className="ml-2" />
         </h1>

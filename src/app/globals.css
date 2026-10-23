@@ -27,3 +27,22 @@ body {
     transition: none;
   }
 }
+
+/* Installed (standalone) web app on iOS: an opaque bar covering the status-bar safe area. Without it iOS 26+ renders
+   a blur/scrim band that extends past the status bar and blurs the top nav. Only in standalone, where the page
+   sits under the status bar; normal browser tabs never see it. */
+.status-bar-cover {
+  display: none;
+}
+/* html.standalone is set by an inline script in layout.tsx (navigator.standalone on iOS, or display-mode match) */
+html.standalone .status-bar-cover {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  height: max(6px, env(safe-area-inset-top, 0px));
+  background: var(--background);
+  pointer-events: none;
+}

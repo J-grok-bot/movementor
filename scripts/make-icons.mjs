@@ -3,27 +3,31 @@ import sharp from "sharp";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const BG = "#18181b";
-// Logo glyph (from public/logo.svg), drawn in a 64-unit box; arrow nudged up-right for clearance; bbox incl. strokes ≈ x 11–55.5, y 14.5–49.
+// Logo glyph: bold knight silhouette (white) with the amber "improvement" arrow rising through its back, drawn in a
+// 64-unit box. The dark outline under the arrow separates it from the knight. bbox incl. strokes ≈ x 8.5–58.8, y 8–54.5.
 const glyph = `
-  <path d="M14 46V20l12 14 12-14v26" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <g transform="translate(4 -2)">
-    <path d="M40 30l9-11m0 0h-8m8 0v8" fill="none" stroke="#1e1b4b" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M40 30l9-11m0 0h-8m8 0v8" fill="none" stroke="#facc15" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>`;
+  <g transform="translate(-3 0)">
+    <path d="M19 47C19 40 23 36.5 28 33.5C24 33 20.5 34 17.5 36L13.5 34C11 32.5 10.5 29.5 12.5 27.5L21 17.5L24 9.5L29 13.5C39 13.5 47 21.5 47 34L47 47Z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+    <rect x="14" y="46.5" width="38" height="8" rx="2.5" fill="#fff"/>
+    <circle cx="23" cy="22.5" r="2" fill="#1e1b4b"/>
+  </g>
+  <path d="M40 50L56 22m0 0h-9m9 0v9" fill="none" stroke="#1e1b4b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 50L56 22m0 0h-9m9 0v9" fill="none" stroke="#facc15" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+const BOX = { w: 50.3, cx: 33.65, cy: 31.25 };
 
 /** Square, fully opaque icon. `content` = glyph width as a fraction of the canvas. */
-function svg(size, content) {
-  const s = (size * content) / 44.5; // glyph bbox width
-  const tx = size / 2 - 33.25 * s;
-  const ty = size / 2 - 31.75 * s;
+function svg(size, content, rx = 0) {
+  const s = (size * content) / BOX.w;
+  const tx = size / 2 - BOX.cx * s;
+  const ty = size / 2 - BOX.cy * s;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <defs>
     <radialGradient id="g" cx="50%" cy="38%" r="70%">
       <stop offset="0" stop-color="#312e81"/><stop offset="0.55" stop-color="#1e1b4b"/><stop offset="1" stop-color="${BG}"/>
     </radialGradient>
   </defs>
-  <rect width="${size}" height="${size}" fill="${BG}"/>
-  <rect width="${size}" height="${size}" fill="url(#g)"/>
+  <rect width="${size}" height="${size}" rx="${rx}" fill="${BG}"/>
+  <rect width="${size}" height="${size}" rx="${rx}" fill="url(#g)"/>
   <g transform="translate(${tx} ${ty}) scale(${s})">${glyph}</g>
 </svg>`;
 }
@@ -58,7 +62,8 @@ imgs.forEach((b, i) => {
   off += b.length;
 });
 writeFileSync("src/app/favicon.ico", Buffer.concat([head, ...imgs]));
-writeFileSync("src/app/icon.svg", svg(64, 0.78));
+writeFileSync("public/icon.svg", svg(64, 0.78));
+writeFileSync("public/logo.svg", svg(64, 0.8, 14)); // in-app header logo (rounded)
 
 // docs preview: 512 icon in an iOS-style rounded mask next to the maskable circle crop
 const icon = await png(512, 0.6), mask = await png(512, 0.46);

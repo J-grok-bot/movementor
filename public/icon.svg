@@ -4,12 +4,14 @@
       <stop offset="0" stop-color="#312e81"/><stop offset="0.55" stop-color="#1e1b4b"/><stop offset="1" stop-color="#18181b"/>
     </radialGradient>
   </defs>
-  <rect width="64" height="64" fill="#18181b"/>
-  <rect width="64" height="64" fill="url(#g)"/>
-  <g transform="translate(-5.299775280898878 -3.6170786516853966) scale(1.1217977528089889)">
-  <path d="M14 46V20l12 14 12-14v26" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <g transform="translate(4 -2)">
-    <path d="M40 30l9-11m0 0h-8m8 0v8" fill="none" stroke="#1e1b4b" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M40 30l9-11m0 0h-8m8 0v8" fill="none" stroke="#facc15" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  </g></g>
+  <rect width="64" height="64" rx="0" fill="#18181b"/>
+  <rect width="64" height="64" rx="0" fill="url(#g)"/>
+  <g transform="translate(-1.3957852882703747 0.9860834990059644) scale(0.9924453280318092)">
+  <g transform="translate(-3 0)">
+    <path d="M19 47C19 40 23 36.5 28 33.5C24 33 20.5 34 17.5 36L13.5 34C11 32.5 10.5 29.5 12.5 27.5L21 17.5L24 9.5L29 13.5C39 13.5 47 21.5 47 34L47 47Z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+    <rect x="14" y="46.5" width="38" height="8" rx="2.5" fill="#fff"/>
+    <circle cx="23" cy="22.5" r="2" fill="#1e1b4b"/>
+  </g>
+  <path d="M40 50L56 22m0 0h-9m9 0v9" fill="none" stroke="#1e1b4b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 50L56 22m0 0h-9m9 0v9" fill="none" stroke="#facc15" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></g>
 </svg>
