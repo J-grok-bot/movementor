@@ -116,7 +116,7 @@ export default function Home() {
           <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.svg" alt="" width={32} height={32} className="h-8 w-8" />
-            MoveMentor
+            <span className="max-[430px]:sr-only">MoveMentor</span>
             <AppNav className="ml-2" />
           </h1>
           <p className="hidden text-sm text-zinc-400 sm:block">Free move-by-move game review. Stockfish runs locally in your browser.</p>

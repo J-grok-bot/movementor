@@ -76,7 +76,7 @@ server-side engine cost.
 - **Home-screen app:** web app manifest (standalone, dark theme) plus iOS/Android icons (apple-touch 180/167/152,
   192, 512, maskable 512, favicons). The icons come from one SVG via `node scripts/make-icons.mjs`
   (`assets/app-icon.svg`, preview `docs/app-icon-preview.png`). Headers respect the notch safe-area insets in standalone mode.
-- **Openings tab** (`/openings`, top nav Review | Openings):
+- **Openings tab** (`/openings`, top nav Review | Openings | Puzzles):
   - Free-play explorer: drag or tap moves for both sides; shows the opening name + ECO of the deepest named book
     position (matched by position, so transpositions work), the move list, undo/reset/flip, the book continuations
     from the current position with the opening each leads to (tap to play), and an optional Stockfish eval.
@@ -87,6 +87,23 @@ server-side engine cost.
   - The game overview links the game's opening name to `/openings` with the game's book moves loaded.
   - Data: `public/opening-tree.json` (all lines + book moves per position), built with `public/openings.json` by
     `node scripts/build-openings.mjs`.
+- **Daily puzzles tab** (`/puzzles`):
+  - Two puzzles a day, the same for everyone, one easier (800–1499) and one harder (1500–2199). They're picked
+    deterministically from the local date (day number → pre-shuffled bundle index), so no server is needed.
+  - The opponent's setup move is played first and the board is oriented to the solver. Wrong moves show "Try again"
+    and revert; any checkmating move counts. Opponent replies are auto-played. 💡 Hint highlights the piece to move,
+    Show solution plays it out. After the puzzle: rating, themes, a Lichess link, and 🔍 Analyze (live Stockfish eval
+    + top line from the puzzle position, free moves).
+  - Progress lives in `localStorage` (`movementor-puzzles`). A puzzle only counts as solved after a clean solve
+    (no wrong moves, no Show solution). Unsolved puzzles (not tried, failed, or revealed) stay in an
+    **Unsolved backlog** with their date, newest first, until you solve them. The first visit date is remembered,
+    so new users don't get a backlog of past days. The streak counts consecutive days on which you solved both of that
+    day's puzzles. The Puzzles tab shows an orange dot while today's or backlog puzzles are unsolved.
+  - Data: `public/puzzles.json` (3,010 puzzles, ~400 KB, ~145 KB gzipped), built from the
+    [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0) by
+    `python3 scripts/curate-puzzles.py lichess_db_puzzle.csv.zst public/puzzles.json`. Filters: popularity ≥ 92,
+    ≥ 3,000 plays, rating deviation ≤ 80, 1–4 solver moves. Then 215 per 100-point rating band, round-robin across
+    each puzzle's main tactic theme (highest popularity × log plays first), with at most 30% mates.
 - Results are cached in `localStorage` per game + depth + MultiPV (LRU eviction when storage is full).
 
 ## Run it
@@ -108,6 +125,7 @@ npm run screenshot -- 5 28                 # needs dev server + Playwright (pyth
                                            # mobile list -> /game/<id> -> back with scroll restore, reduced motion
 python3 scripts/graph-markers-test.py [baseUrl] # graph badges: defaults, toggles, tooltip, jump, clusters
 python3 scripts/deviation-test.py [baseUrl] # blue previews, amber moves, live eval, truncation, Resume, no jumps
+python3 scripts/puzzles-test.py [baseUrl] # daily puzzles: try again, hint, solve, analyze, show solution, backlog, dot
 python3 scripts/openings-test.py [baseUrl]  # /openings: explorer, transpositions, search, walkthrough, practice
 python3 scripts/mobile-scroll-test.py [baseUrl] [gameIndex]   # iPhone/WebKit: scrollY must not change on "next"
 SHOW_LINES=1 npm run test:analysis -- Killer5291 0 14   # also print top + 2nd engine line for every move
@@ -252,5 +270,7 @@ The whole app is GPL-3.0 because it ships Stockfish.
   `public/stockfish/`, with its license text at `public/stockfish/COPYING-GPLv3.txt`.
 - **Opening names** from lichess-org/chess-openings (https://github.com/lichess-org/chess-openings), CC0, converted
   by `scripts/build-openings.mjs` into `public/openings.json` (source TSVs in `data/`).
+- **Daily puzzles** from the Lichess puzzle database (https://database.lichess.org/#puzzles), CC0, curated by
+  `scripts/curate-puzzles.py` into `public/puzzles.json`.
 - **chess.js** (BSD-2-Clause) and **react-chessboard** (MIT).
 - Game data: public Chess.com Published-Data API. Not affiliated with Chess.com.

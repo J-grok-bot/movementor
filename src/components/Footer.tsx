@@ -30,6 +30,10 @@ export function Footer() {
         <a className="underline" href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noreferrer">
           lichess-org/chess-openings
         </a>{" "}
+        (CC0). Daily puzzles from the{" "}
+        <a className="underline" href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">
+          Lichess puzzle database
+        </a>{" "}
         (CC0).
       </p>
     </footer>

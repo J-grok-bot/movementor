@@ -306,7 +306,7 @@ export function OpeningsView() {
             height={32}
             className="h-8 w-8"
           />
-          MoveMentor
+          <span className="max-[430px]:sr-only">MoveMentor</span>
           <AppNav className="ml-2" />
         </h1>
         <div className="relative w-full sm:w-80">
